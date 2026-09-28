@@ -1,0 +1,11 @@
+.venv/
+.venv-linux/
+__pycache__/
+.pytest_cache/
+artifacts/
+.env
+node_modules/
+.next/
+dist/
+coverage/
+
