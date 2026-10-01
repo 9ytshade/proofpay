@@ -85,24 +85,48 @@
 
 ## Live lifecycle test
 
-> **Status:** Pending manual execution via web frontend.
+> **Status:** **VERIFIED ON-CHAIN (FULL APPROVAL LIFECYCLE)**
 
-The GenLayer CLI 0.39.1 `write` command does not support the `--value` flag
-required for `create_bounty` (which is a payable method). The live lifecycle
-test must be performed via the web frontend at `http://localhost:3000` (or the
-Vercel deployment) using MetaMask with the deployer and builder accounts.
+The complete end-to-end approval lifecycle has been executed and verified live on GenLayer Studionet (Chain 61999) using the web frontend and MetaMask:
 
-### Test procedure
+### Lifecycle execution facts
 
-1. Start the frontend: `cd web && npm run dev`
-2. Import the `proofpay-deployer` private key into MetaMask (Account 1 = Client)
-3. Import the `proofpay-builder` private key into MetaMask (Account 2 = Builder)
-4. Switch MetaMask to Studionet (chain 61999)
-5. **Client:** Create a bounty with a small reward (e.g., 1 GEN) — wait for FINALIZED
-6. **Builder:** Switch to builder account, submit proof with a real GitHub commit URL,
-   evidence paths, and deployment URL — wait for FINALIZED
-7. **Anyone:** Trigger adjudication — wait for FINALIZED
-8. Verify verdict outcome, per-criterion results, and settlement
+1. **Bounty #1 Created:**
+   - Client funded the escrow reward on-chain
+   - Title: `ProofPay v2 Production Integration Verification`
+   - Acceptance criteria: 3 independent criteria requiring README architecture verification, genlayer client initialization, and public HTTPS availability.
+
+2. **Proof #1 Submitted:**
+   - Builder account submitted public proof with immutable commit identity:
+     - Canonical commit: `https://github.com/9ytshade/proofpay/commit/e83e87d2d8f92987b7008a213ebca76ab133c8c2`
+     - Evidence manifest paths: `README.md` and `web/src/lib/genlayer.ts`
+     - Deployment URL: `https://proofpay-gamma.vercel.app/`
+
+3. **Intelligent Consensus Adjudication:**
+   - GenLayer validators fetched the pinned source files from `raw.githubusercontent.com` and inspected the live deployment.
+   - All validators independently verified each criterion.
+
+4. **Verdict #1 Recorded On-Chain:**
+   ```json
+   {
+     "id": 1,
+     "bounty_id": 1,
+     "submission_id": 1,
+     "approved": true,
+     "required_criteria_passed": true,
+     "outcome": "APPROVED",
+     "score": 100,
+     "criteria_results": "PASS|PASS|PASS",
+     "criteria_report": "1. PASS - The repository README specifies ProofPay v2 architecture\n2. PASS - The codebase contains genlayer client initialization code\n3. PASS - The application loads over public HTTPS without errors",
+     "reason": "All required acceptance criteria passed."
+   }
+   ```
+
+5. **Settlement and Award:**
+   - The contract deterministically derived `APPROVED` (100% of criteria `PASS`).
+   - Escrowed reward transferred to the builder account via GenLayer's finality-safe mechanism.
+   - Bounty status transitioned to `awarded`.
+   - Frontend displays the `APPROVED · REWARD SETTLED` banner and individual criterion chips `[C1: PASS]`, `[C2: PASS]`, `[C3: PASS]`.
 
 ## Legacy contract
 
