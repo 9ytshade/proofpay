@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { isFutureUnixTimestamp, isHttpsUrl, isPublicGithubCommitUrl, normalizeHttpsUrl, parseGenToWei } from "./safety";
+import {
+  getReviewTxMap,
+  getUndeterminedReviews,
+  isAllowedEvidenceFile,
+  isFutureUnixTimestamp,
+  isHttpsUrl,
+  isPublicGithubCommitUrl,
+  normalizeHttpsUrl,
+  parseGenToWei,
+  validateEvidencePaths,
+} from "./safety";
 import { genLayerTransactionUrl } from "./genlayer";
 
 describe("ProofPay client safety rules", () => {
@@ -47,6 +57,36 @@ describe("ProofPay client safety rules", () => {
     ]) {
       expect(isPublicGithubCommitUrl(value)).toBe(false);
     }
+  });
+
+  it("validates bounded source evidence manifest paths", () => {
+    const validManifest = "src/app/page.tsx\npackage.json\nREADME.md";
+    const res = validateEvidencePaths(validManifest);
+    expect(res.valid).toBe(true);
+    expect(res.paths).toEqual(["src/app/page.tsx", "package.json", "README.md"]);
+
+    // Disallow empty
+    expect(validateEvidencePaths("").valid).toBe(false);
+    // Disallow more than 6
+    const seven = "1.ts\n2.ts\n3.ts\n4.ts\n5.ts\n6.ts\n7.ts";
+    expect(validateEvidencePaths(seven).valid).toBe(false);
+    // Disallow traversal
+    expect(validateEvidencePaths("src/../secret.ts").valid).toBe(false);
+    expect(validateEvidencePaths("/absolute/path.ts").valid).toBe(false);
+    expect(validateEvidencePaths("src\\path.ts").valid).toBe(false);
+    // Disallow duplicates
+    expect(validateEvidencePaths("src/app.tsx\nsrc/app.tsx").valid).toBe(false);
+    // Disallow unsupported extensions
+    expect(validateEvidencePaths("image.png").valid).toBe(false);
+    expect(isAllowedEvidenceFile("Dockerfile")).toBe(true);
+    expect(isAllowedEvidenceFile(".env.example")).toBe(true);
+  });
+
+  it("contains no fake or seeded default review or transaction data", () => {
+    const reviews = getUndeterminedReviews();
+    expect(reviews).toEqual({});
+    const txMap = getReviewTxMap();
+    expect(txMap).toEqual({});
   });
 
   it("requires a deadline after the current time", () => {

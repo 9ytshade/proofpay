@@ -1,3 +1,5 @@
+import { proofPayContractAddress } from "./genlayer";
+
 export function parseGenToWei(value: string) {
   const cleaned = value.trim();
   if (!/^\d+(\.\d{1,18})?$/.test(cleaned)) {
@@ -43,11 +45,76 @@ export function isPublicGithubCommitUrl(value: string) {
   );
 }
 
+export function isAllowedEvidenceFile(path: string): boolean {
+  const lower = path.toLowerCase();
+  const allowedExtensions = [
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".md", ".txt",
+    ".html", ".css", ".scss", ".sass", ".less", ".yaml", ".yml", ".toml", ".sol",
+    ".rs", ".go", ".java", ".kt", ".sh", ".ps1", ".sql", ".vue", ".svelte",
+  ];
+  if (allowedExtensions.some((ext) => lower.endsWith(ext))) {
+    return true;
+  }
+
+  const basename = lower.split("/").pop() ?? "";
+  const allowedBasenames = ["dockerfile", "makefile", "readme", "license", ".env.example"];
+  return allowedBasenames.includes(basename);
+}
+
+export function validateEvidencePaths(value: string): { valid: boolean; error?: string; paths: string[] } {
+  const cleaned = value.trim();
+  if (cleaned.length === 0) {
+    return { valid: false, error: "Provide at least one source evidence path.", paths: [] };
+  }
+  if (cleaned.length > 1500) {
+    return { valid: false, error: "Source evidence manifest is too long (maximum 1,500 characters).", paths: [] };
+  }
+
+  const rawPaths = cleaned.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (rawPaths.length === 0 || rawPaths.length > 6) {
+    return { valid: false, error: "Provide between one and six source evidence paths.", paths: [] };
+  }
+
+  const normalized: string[] = [];
+  for (const path of rawPaths) {
+    if (path.length > 240) {
+      return { valid: false, error: `Path "${path.slice(0, 30)}…" exceeds maximum length of 240 characters.`, paths: [] };
+    }
+    if (path.startsWith("/") || path.endsWith("/") || /[\\?#%]/.test(path)) {
+      return { valid: false, error: `Invalid source evidence path "${path}". Must be relative with no leading/trailing slashes, queries, or special characters.`, paths: [] };
+    }
+
+    const segments = path.split("/");
+    for (const segment of segments) {
+      if (segment === "" || segment === "." || segment === "..") {
+        return { valid: false, error: `Invalid path traversal or segment in "${path}".`, paths: [] };
+      }
+    }
+
+    if (!/^[a-zA-Z0-9_\-./]+$/.test(path)) {
+      return { valid: false, error: `Invalid characters in source path "${path}".`, paths: [] };
+    }
+
+    if (!isAllowedEvidenceFile(path)) {
+      return { valid: false, error: `Path "${path}" must reference a supported text file (.py, .ts, .tsx, .json, .md, package.json, Dockerfile, etc.).`, paths: [] };
+    }
+
+    if (normalized.includes(path)) {
+      return { valid: false, error: `Duplicate source evidence path "${path}".`, paths: [] };
+    }
+    normalized.push(path);
+  }
+
+  return { valid: true, paths: normalized };
+}
+
 export function isFutureUnixTimestamp(timestamp: number, nowMilliseconds = Date.now()) {
   return Number.isFinite(timestamp) && timestamp > Math.floor(nowMilliseconds / 1000);
 }
 
-const UNDETERMINED_STORAGE_KEY = "proofpay_undetermined_reviews";
+function getUndeterminedStorageKey() {
+  return `proofpay_undetermined_${proofPayContractAddress.toLowerCase()}`;
+}
 
 export type UndeterminedInfo = {
   reason: string;
@@ -55,22 +122,13 @@ export type UndeterminedInfo = {
   timestamp: number;
 };
 
-const DEFAULT_UNDETERMINED: Record<string, UndeterminedInfo> = {
-  "5:1": {
-    reason: "Repository evidence could not be retrieved (HTTP 404 Not Found)",
-    txHash: "0x1198b69a143588b66823559e5c0d2b83b35fb719d0463214f80fb004e33d9958",
-    timestamp: 1790817000000,
-  },
-};
-
 export function getUndeterminedReviews(): Record<string, UndeterminedInfo> {
-  if (typeof window === "undefined") return DEFAULT_UNDETERMINED;
+  if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(UNDETERMINED_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, UndeterminedInfo>) : {};
-    return { ...DEFAULT_UNDETERMINED, ...parsed };
+    const raw = localStorage.getItem(getUndeterminedStorageKey());
+    return raw ? (JSON.parse(raw) as Record<string, UndeterminedInfo>) : {};
   } catch {
-    return DEFAULT_UNDETERMINED;
+    return {};
   }
 }
 
@@ -89,7 +147,7 @@ export function markUndeterminedReview(
       txHash,
       timestamp: Date.now(),
     };
-    localStorage.setItem(UNDETERMINED_STORAGE_KEY, JSON.stringify(current));
+    localStorage.setItem(getUndeterminedStorageKey(), JSON.stringify(current));
     if (txHash) {
       saveReviewTx(bountyId, submissionId, txHash);
     }
@@ -98,20 +156,17 @@ export function markUndeterminedReview(
   }
 }
 
-const REVIEW_TX_STORAGE_KEY = "proofpay_review_tx_map";
-
-const DEFAULT_REVIEW_TX_MAP: Record<string, string> = {
-  "5:1": "0x1198b69a143588b66823559e5c0d2b83b35fb719d0463214f80fb004e33d9958",
-};
+function getReviewTxStorageKey() {
+  return `proofpay_review_tx_map_${proofPayContractAddress.toLowerCase()}`;
+}
 
 export function getReviewTxMap(): Record<string, string> {
-  if (typeof window === "undefined") return DEFAULT_REVIEW_TX_MAP;
+  if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(REVIEW_TX_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    return { ...DEFAULT_REVIEW_TX_MAP, ...parsed };
+    const raw = localStorage.getItem(getReviewTxStorageKey());
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
   } catch {
-    return DEFAULT_REVIEW_TX_MAP;
+    return {};
   }
 }
 
@@ -124,10 +179,8 @@ export function saveReviewTx(
   try {
     const current = getReviewTxMap();
     current[`${bountyId}:${submissionId}`] = txHash;
-    localStorage.setItem(REVIEW_TX_STORAGE_KEY, JSON.stringify(current));
+    localStorage.setItem(getReviewTxStorageKey(), JSON.stringify(current));
   } catch {
     // Ignore storage errors
   }
 }
-
-

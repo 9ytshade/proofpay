@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  checkContractVersionCompatibility,
   createProofPayClient,
   discoverFinalBounties,
   formatGen,
@@ -34,20 +35,32 @@ type Submission = {
   submission_id: number | string;
   builder: string;
   repository_url: string;
+  repository_owner?: string;
+  repository_name?: string;
+  commit_sha?: string;
+  evidence_paths?: string;
   deployment_url: string;
   summary: string;
   status: string;
   score: number | string;
   reason: string;
   verdict_id: number | string;
+  review_count?: number | string;
+  last_outcome?: string;
 };
 
 type Verdict = {
+  id?: number | string;
+  bounty_id?: number | string;
+  submission_id?: number | string;
   approved: boolean;
   required_criteria_passed: boolean;
+  outcome?: string;
   score: number | string;
+  criteria_results?: string[];
   criteria_report: string;
   reason: string;
+  evidence_note?: string;
 };
 
 type ReviewRecord = {
@@ -71,11 +84,12 @@ function shortHash(hash: string) {
 function getDisplayStatus(
   record: ReviewRecord,
   undeterminedMap: Record<string, UndeterminedInfo>,
-): "submitted" | "approved" | "rejected" | "undetermined" {
-  if (record.submission.status === "approved") return "approved";
-  if (record.submission.status === "rejected") return "rejected";
+): "submitted" | "approved" | "rejected" | "undetermined" | "net-failure" {
+  if (record.submission.status === "approved" || record.verdict?.outcome === "APPROVED") return "approved";
+  if (record.submission.status === "rejected" || record.verdict?.outcome === "REJECTED") return "rejected";
+  if (record.verdict?.outcome === "UNDETERMINED" || record.submission.last_outcome === "UNDETERMINED") return "undetermined";
   const key = `${record.bounty.id}:${record.submission.submission_id}`;
-  if (undeterminedMap[key]) return "undetermined";
+  if (undeterminedMap[key]) return "net-failure";
   return "submitted";
 }
 
@@ -189,6 +203,10 @@ export function ReviewDesk() {
     try {
       if (!window.ethereum)
         throw new Error("Install or unlock MetaMask before starting the review.");
+      const versionCheck = await checkContractVersionCompatibility();
+      if (!versionCheck.compatible) {
+        throw new Error(versionCheck.error ?? "The contract version is incompatible with ProofPay v2.");
+      }
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
       const address =
         Array.isArray(accounts) && typeof accounts[0] === "string"
@@ -404,10 +422,14 @@ function ReviewCard({
   onAdjudicate: () => void;
 }) {
   const { bounty, submission, verdict } = record;
-  const isApproved = submission.status === "approved";
-  const isRejected = submission.status === "rejected";
-  const isUndetermined = !isApproved && !isRejected && Boolean(undeterminedInfo);
-  const isSubmitted = !isApproved && !isRejected && !isUndetermined;
+  const isApproved = submission.status === "approved" || verdict?.outcome === "APPROVED";
+  const isRejected = submission.status === "rejected" || verdict?.outcome === "REJECTED";
+  const isApplicationUndetermined = verdict?.outcome === "UNDETERMINED" || submission.last_outcome === "UNDETERMINED";
+  const isNetworkUndetermined = !isApproved && !isRejected && !isApplicationUndetermined && Boolean(undeterminedInfo);
+  const isSubmitted = !isApproved && !isRejected && !isApplicationUndetermined && !isNetworkUndetermined;
+  const paths = submission.evidence_paths
+    ? submission.evidence_paths.split("\n").map((p) => p.trim()).filter(Boolean)
+    : [];
 
   return (
     <article
@@ -416,14 +438,21 @@ function ReviewCard({
           ? "review-approved"
           : isRejected
             ? "review-rejected"
-            : isUndetermined
+            : isApplicationUndetermined
               ? "border-[#e09138]/60 bg-[var(--card)]"
-              : ""
+              : isNetworkUndetermined
+                ? "border-[#db6b5e]/60 bg-[var(--card)]"
+                : ""
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="mono text-[10px] tracking-[.1em]">
           CASE #{bounty.id} · EVIDENCE #{submission.submission_id}
+          {submission.commit_sha && (
+            <span className="ml-2 font-mono text-[var(--muted-ink)]">
+              ({submission.commit_sha.slice(0, 8)}…)
+            </span>
+          )}
         </p>
         <span
           className={`mono rounded-full px-3 py-1 text-[10px] tracking-[0.08em] ${
@@ -431,12 +460,22 @@ function ReviewCard({
               ? "bg-[color-mix(in_srgb,var(--verdict)_70%,var(--paper))] text-[var(--ink)]"
               : isRejected
                 ? "bg-[color-mix(in_srgb,#db6b5e_14%,var(--paper))] text-[#b95046]"
-                : isUndetermined
+                : isApplicationUndetermined
                   ? "bg-[#e09138]/20 font-medium text-[#c27623]"
-                  : "border border-[var(--line)]"
+                  : isNetworkUndetermined
+                    ? "bg-[#db6b5e]/15 font-medium text-[#b95046]"
+                    : "border border-[var(--line)]"
           }`}
         >
-          {isUndetermined ? "UNDETERMINED" : submission.status.toUpperCase()}
+          {isApproved
+            ? "APPROVED"
+            : isRejected
+              ? "REJECTED"
+              : isApplicationUndetermined
+                ? "UNDETERMINED (ON-CHAIN)"
+                : isNetworkUndetermined
+                  ? "UNDETERMINED (NETWORK)"
+                  : submission.status.toUpperCase()}
         </span>
       </div>
       <h3 className="mt-4 text-3xl leading-[.95] tracking-[-.05em]">
@@ -450,7 +489,7 @@ function ReviewCard({
           value={
             verdict
               ? `${verdict.score}/100`
-              : isUndetermined
+              : isApplicationUndetermined
                 ? "Undetermined"
                 : "Awaiting review"
           }
@@ -459,6 +498,22 @@ function ReviewCard({
       <p className="mt-5 text-sm leading-6 text-[var(--muted-ink)]">
         {submission.summary}
       </p>
+
+      {paths.length > 0 && (
+        <div className="mt-3">
+          <p className="mono text-[9px] tracking-[.08em] text-[var(--muted-ink)]">
+            EVIDENCE PATHS ({paths.length}):
+          </p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {paths.map((path) => (
+              <span key={path} className="mono rounded border border-[var(--line)] bg-[var(--paper)] px-2 py-0.5 text-[10px] text-[var(--ink)]">
+                {path}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-3">
         <a
           href={submission.repository_url}
@@ -466,7 +521,7 @@ function ReviewCard({
           rel="noreferrer"
           className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4"
         >
-          VIEW REPOSITORY ↗
+          VIEW SOURCE COMMIT ↗
         </a>
         <a
           href={submission.deployment_url}
@@ -484,17 +539,32 @@ function ReviewCard({
         </Link>
       </div>
 
-      {/* Undetermined callout */}
-      {isUndetermined && undeterminedInfo && (
+      {/* Application Undetermined Callout */}
+      {isApplicationUndetermined && (
         <div className="mt-4 rounded-lg border-l-2 border-[#e09138] bg-[#e09138]/10 p-3">
           <p className="mono text-[10px] tracking-[.1em] text-[#c27623]">
-            REVIEW UNDETERMINED · EVIDENCE UNREACHABLE
+            APPLICATION VERDICT: UNDETERMINED · RETRYABLE ON-CHAIN
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--ink)]">
+            {verdict?.reason || "External evidence returned transient errors during validator retrieval."}
+          </p>
+          <p className="mt-2 text-[11px] leading-4 text-[var(--muted-ink)]">
+            Escrow remains locked. The submission remains eligible for review retry.
+          </p>
+        </div>
+      )}
+
+      {/* Network Undetermined Callout */}
+      {isNetworkUndetermined && undeterminedInfo && (
+        <div className="mt-4 rounded-lg border-l-2 border-[#db6b5e] bg-[#db6b5e]/10 p-3">
+          <p className="mono text-[10px] tracking-[.1em] text-[#b95046]">
+            TRANSACTION REVERTED OR NETWORK TIMEOUT
           </p>
           <p className="mt-1 text-xs leading-5 text-[var(--ink)]">
             {undeterminedInfo.reason}
           </p>
           <p className="mt-2 text-[11px] leading-4 text-[var(--muted-ink)]">
-            Validators could not fetch the evidence URL from the network. Escrow remains safely locked and open for other submissions with working links.
+            Consensus transaction failed to reach finality. On-chain state was not modified.
           </p>
         </div>
       )}
@@ -505,12 +575,35 @@ function ReviewCard({
             verdict.approved ? "verdict-approved" : "verdict-rejected"
           }`}
         >
-          <p className="mono text-[10px] tracking-[.1em]">
-            {verdict.approved
-              ? "APPROVED · REWARD SETTLED"
-              : "NOT APPROVED · ESCROW REMAINS OPEN"}
-          </p>
+          <div className="flex flex-wrap justify-between gap-3">
+            <p className="mono text-[10px] tracking-[.1em]">
+              {verdict.approved
+                ? "APPROVED · REWARD SETTLED"
+                : isApplicationUndetermined
+                  ? "UNDETERMINED · ESCROW UNCHANGED"
+                  : "NOT APPROVED · ESCROW REMAINS OPEN"}
+            </p>
+            {verdict.outcome && <span className="mono text-[10px] font-bold">({verdict.outcome})</span>}
+          </div>
           <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
+          {verdict.criteria_results && verdict.criteria_results.length > 0 && (
+            <div className="mt-3 border-t border-current/15 pt-3">
+              <p className="mono text-[9px] tracking-[.08em] mb-1.5 font-medium">CRITERIA CONSENSUS RESULTS:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {verdict.criteria_results.map((res, idx) => (
+                  <span key={idx} className={`mono rounded px-2 py-0.5 text-[9px] font-bold ${
+                    res === "PASS"
+                      ? "bg-green-700/20 text-green-800"
+                      : res === "FAIL"
+                        ? "bg-red-700/20 text-red-800"
+                        : "bg-amber-700/20 text-amber-800"
+                  }`}>
+                    C{idx + 1}: {res}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">
             {verdict.criteria_report}
           </p>
@@ -550,27 +643,33 @@ function ReviewCard({
         </div>
       )}
 
-      {(isSubmitted || isUndetermined) && (
+      {(isSubmitted || isApplicationUndetermined || isNetworkUndetermined) && (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-5">
           <p className="max-w-sm text-sm leading-5 text-[var(--muted-ink)]">
-            {isUndetermined
-              ? "You may retry review if the external link has been restored."
-              : "This starts GenLayer’s public-evidence evaluation. It may use fee balance and can take several consensus phases."}
+            {isApplicationUndetermined
+              ? "On-chain evaluation was undetermined. You may retry adjudication."
+              : isNetworkUndetermined
+                ? "Network transaction timed out or reverted. You can re-send the review."
+                : "This starts GenLayer’s public-evidence evaluation. It may use fee balance and can take several consensus phases."}
           </p>
           <button
             onClick={onAdjudicate}
             disabled={reviewing}
             className={`rounded-full px-5 py-3 text-sm text-white shadow-[3px_3px_0_var(--ink)] transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60 ${
-              isUndetermined
+              isApplicationUndetermined
                 ? "bg-[#c27623] hover:bg-[#a5621a]"
-                : "bg-[var(--signal)]"
+                : isNetworkUndetermined
+                  ? "bg-[#db6b5e] hover:bg-[#b95046]"
+                  : "bg-[var(--signal)]"
             }`}
           >
             {reviewing
               ? "Opening wallet…"
-              : isUndetermined
+              : isApplicationUndetermined
                 ? "Retry review"
-                : "Start intelligent review"}
+                : isNetworkUndetermined
+                  ? "Re-send review"
+                  : "Start intelligent review"}
           </button>
         </div>
       )}

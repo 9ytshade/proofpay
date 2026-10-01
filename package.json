@@ -5,10 +5,10 @@
   "description": "ProofPay GenLayer network tooling",
   "scripts": {
     "genlayer": "genlayer",
-    "network:studio-dev": "genlayer network set studio-dev",
+    "network:studionet": "genlayer network set studionet",
     "network:info": "genlayer network info"
   },
   "devDependencies": {
-    "genlayer": "0.40.0-rc.3"
+    "genlayer": "0.39.1"
   }
 }

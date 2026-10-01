@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
+  checkContractVersionCompatibility,
   createProofPayClient,
   formatGen,
   proofPayContractAddress,
@@ -35,20 +36,32 @@ type Submission = {
   submission_id: number | string;
   builder: string;
   repository_url: string;
+  repository_owner?: string;
+  repository_name?: string;
+  commit_sha?: string;
+  evidence_paths?: string;
   deployment_url: string;
   summary: string;
   status: string;
   score: number | string;
   reason: string;
   verdict_id: number | string;
+  review_count?: number | string;
+  last_outcome?: string;
 };
 
 type Verdict = {
+  id?: number | string;
+  bounty_id?: number | string;
+  submission_id?: number | string;
   approved: boolean;
   required_criteria_passed: boolean;
+  outcome?: string;
   score: number | string;
+  criteria_results?: string[];
   criteria_report: string;
   reason: string;
+  evidence_note?: string;
 };
 
 type LoadState = "loading" | "ready" | "error";
@@ -157,6 +170,10 @@ export function ReviewRecord() {
     try {
       if (!window.ethereum)
         throw new Error("Install or unlock MetaMask before starting the review.");
+      const versionCheck = await checkContractVersionCompatibility();
+      if (!versionCheck.compatible) {
+        throw new Error(versionCheck.error ?? "The contract version is incompatible with ProofPay v2.");
+      }
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
       const address =
         Array.isArray(accounts) && typeof accounts[0] === "string"
@@ -210,11 +227,19 @@ export function ReviewRecord() {
     );
   }
 
-  const isApproved = submission.status === "approved";
-  const isRejected = submission.status === "rejected";
+  const isApproved = submission.status === "approved" || verdict?.outcome === "APPROVED";
+  const isRejected = submission.status === "rejected" || verdict?.outcome === "REJECTED";
+  const isApplicationUndetermined = verdict?.outcome === "UNDETERMINED" || submission.last_outcome === "UNDETERMINED";
   const undeterminedInfo = undeterminedMap[`${bountyId}:${submissionId}`];
-  const isUndetermined = !isApproved && !isRejected && Boolean(undeterminedInfo);
-  const isSubmitted = !isApproved && !isRejected && !isUndetermined;
+  const isNetworkUndetermined = !isApproved && !isRejected && !isApplicationUndetermined && Boolean(undeterminedInfo);
+  const isSubmitted = !isApproved && !isRejected && !isApplicationUndetermined && !isNetworkUndetermined;
+
+  const paths = submission.evidence_paths
+    ? submission.evidence_paths.split("\n").map((p) => p.trim()).filter(Boolean)
+    : [];
+  const shortSha = submission.commit_sha
+    ? `${submission.commit_sha.slice(0, 10)}…`
+    : null;
 
   return (
     <div>
@@ -253,12 +278,22 @@ export function ReviewRecord() {
                 ? "bg-[color-mix(in_srgb,var(--verdict)_70%,var(--paper))] text-[var(--ink)]"
                 : isRejected
                   ? "bg-[color-mix(in_srgb,#db6b5e_14%,var(--paper))] text-[#b95046]"
-                  : isUndetermined
+                  : isApplicationUndetermined
                     ? "bg-[#e09138]/20 font-medium text-[#c27623]"
-                    : "border border-[var(--line)]"
+                    : isNetworkUndetermined
+                      ? "bg-[#db6b5e]/15 font-medium text-[#b95046]"
+                      : "border border-[var(--line)]"
             }`}
           >
-            {isUndetermined ? "UNDETERMINED" : submission.status.toUpperCase()}
+            {isApproved
+              ? "APPROVED"
+              : isRejected
+                ? "REJECTED"
+                : isApplicationUndetermined
+                  ? "UNDETERMINED (ON-CHAIN)"
+                  : isNetworkUndetermined
+                    ? "UNDETERMINED (NETWORK)"
+                    : submission.status.toUpperCase()}
           </span>
         </div>
         <h1 className="mt-5 max-w-5xl text-5xl leading-[0.9] tracking-[-0.06em] sm:text-7xl">
@@ -270,24 +305,38 @@ export function ReviewRecord() {
       </header>
 
       <section
-        className="grid gap-5 border-b border-[var(--line)] py-6 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid gap-5 border-b border-[var(--line)] py-6 sm:grid-cols-2 lg:grid-cols-5"
         aria-label="Review summary"
       >
         <Metric label="ESCROW" value={`${formatGen(bounty.reward)} GEN`} />
         <Metric label="BUILDER" value={shortAddress(submission.builder)} />
         <Metric
           label="STATUS"
-          value={isUndetermined ? "UNDETERMINED" : submission.status.toUpperCase()}
+          value={
+            isApproved
+              ? "APPROVED"
+              : isRejected
+                ? "REJECTED"
+                : isApplicationUndetermined
+                  ? "UNDETERMINED"
+                  : isNetworkUndetermined
+                    ? "NET FAIL"
+                    : submission.status.toUpperCase()
+          }
         />
         <Metric
           label="SCORE"
           value={
             verdict
               ? `${verdict.score}/100`
-              : isUndetermined
+              : isApplicationUndetermined
                 ? "Undetermined"
                 : "Awaiting review"
           }
+        />
+        <Metric
+          label="REVIEWS"
+          value={submission.review_count !== undefined ? String(submission.review_count) : "0"}
         />
       </section>
 
@@ -299,41 +348,90 @@ export function ReviewRecord() {
           </section>
 
           <section>
-            <SectionLabel>EVIDENCE LINKS</SectionLabel>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-              <a
-                href={submission.repository_url}
-                target="_blank"
-                rel="noreferrer"
-                className="mono text-[9px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4"
-              >
-                VIEW SOURCE COMMIT ↗
-              </a>
-              <a
-                href={submission.deployment_url}
-                target="_blank"
-                rel="noreferrer"
-                className="mono text-[9px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4"
-              >
-                VIEW DEPLOYMENT ↗
-              </a>
+            <SectionLabel>IMMUTABLE SOURCE & DEPLOYMENT</SectionLabel>
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="mono text-[10px] text-[var(--muted-ink)]">COMMIT PERMALINK:</span>
+                <a
+                  href={submission.repository_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono break-all text-[11px] text-[var(--signal)] underline underline-offset-4"
+                >
+                  {submission.repository_url}
+                </a>
+              </div>
+              {submission.commit_sha && (
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="mono text-[10px] text-[var(--muted-ink)]">COMMIT SHA:</span>
+                  <span className="mono font-mono text-[11px] text-[var(--ink)]">
+                    {submission.commit_sha}
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="mono text-[10px] text-[var(--muted-ink)]">LIVE DEPLOYMENT:</span>
+                <a
+                  href={submission.deployment_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono break-all text-[11px] text-[var(--signal)] underline underline-offset-4"
+                >
+                  {submission.deployment_url}
+                </a>
+              </div>
             </div>
+
+            {paths.length > 0 && (
+              <div className="mt-4">
+                <SectionLabel>BOUNDED EVIDENCE PATHS ({paths.length})</SectionLabel>
+                <p className="mt-1 text-xs text-[var(--muted-ink)]">
+                  Evaluated at raw.githubusercontent.com pinned to commit {shortSha ?? "SHA"}.
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {paths.map((path) => (
+                    <li
+                      key={path}
+                      className="mono rounded border border-[var(--line)] bg-[var(--card)] px-2.5 py-1 text-xs text-[var(--ink)]"
+                    >
+                      {path}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
 
-          {/* Undetermined callout */}
-          {isUndetermined && undeterminedInfo && (
+          {/* Application-level Undetermined Callout */}
+          {isApplicationUndetermined && (
             <section>
               <div className="rounded-lg border-l-2 border-[#e09138] bg-[#e09138]/10 p-4">
                 <p className="mono text-[10px] tracking-[.1em] text-[#c27623]">
-                  REVIEW UNDETERMINED · EVIDENCE UNREACHABLE
+                  APPLICATION VERDICT: UNDETERMINED · RETRYABLE ON-CHAIN STATE
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[var(--ink)]">
+                  {verdict?.reason ||
+                    "External evidence was temporarily unreachable or returned transient errors (e.g. HTTP 429/5xx)."}
+                </p>
+                <p className="mt-3 text-xs leading-5 text-[var(--muted-ink)]">
+                  This is finalized on-chain application state. Escrow remains safely locked, and the submission remains open for review retry.
+                </p>
+              </div>
+            </section>
+          )}
+
+          {/* Network-level Undetermined Callout */}
+          {isNetworkUndetermined && undeterminedInfo && (
+            <section>
+              <div className="rounded-lg border-l-2 border-[#db6b5e] bg-[#db6b5e]/10 p-4">
+                <p className="mono text-[10px] tracking-[.1em] text-[#b95046]">
+                  TRANSACTION REVERTED OR NETWORK TIMEOUT
                 </p>
                 <p className="mt-2 text-sm leading-6 text-[var(--ink)]">
                   {undeterminedInfo.reason}
                 </p>
                 <p className="mt-3 text-xs leading-5 text-[var(--muted-ink)]">
-                  GenLayer validators could not retrieve the submitted evidence over
-                  the network. The bounty escrow remains safely locked and open for other
-                  submissions with working links.
+                  The consensus transaction itself failed to reach finality. On-chain contract state was not modified. You can re-send the adjudication transaction.
                 </p>
               </div>
             </section>
@@ -350,13 +448,44 @@ export function ReviewRecord() {
                 <div className="flex flex-wrap justify-between gap-3">
                   <p className="mono text-[10px] tracking-[0.08em]">
                     {verdict.approved ? "APPROVED" : "NOT APPROVED"}
+                    {verdict.outcome && <span className="ml-2 font-bold">({verdict.outcome})</span>}
                   </p>
                   <p className="mono text-[10px]">SCORE {verdict.score}/100</p>
                 </div>
                 <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
+
+                {verdict.criteria_results && verdict.criteria_results.length > 0 && (
+                  <div className="mt-3 border-t border-current/15 pt-3">
+                    <p className="mono text-[9px] tracking-[.08em] mb-2 font-medium">
+                      CRITERIA CONSENSUS RESULTS:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {verdict.criteria_results.map((res, idx) => (
+                        <span
+                          key={idx}
+                          className={`mono rounded px-2 py-0.5 text-[9px] font-bold ${
+                            res === "PASS"
+                              ? "bg-green-700/20 text-green-800"
+                              : res === "FAIL"
+                                ? "bg-red-700/20 text-red-800"
+                                : "bg-amber-700/20 text-amber-800"
+                          }`}
+                        >
+                          C{idx + 1}: {res}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">
                   {verdict.criteria_report}
                 </p>
+                {verdict.evidence_note && (
+                  <p className="mt-2 text-xs italic text-[var(--muted-ink)]">
+                    Note: {verdict.evidence_note}
+                  </p>
+                )}
               </div>
             </section>
           )}
@@ -382,7 +511,7 @@ export function ReviewRecord() {
                         bountyId,
                         submissionId,
                         status.errorReason ||
-                          "Evidence could not be retrieved by GenLayer validators.",
+                          "Consensus transaction failed or validator timed out.",
                         transactionHash,
                       );
                       setUndeterminedMap(getUndeterminedReviews());
@@ -400,21 +529,18 @@ export function ReviewRecord() {
             <SectionLabel>REVIEW STATE</SectionLabel>
             {isApproved && (
               <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">
-                This submission was approved. The builder received the escrowed
-                reward.
+                This submission was approved. The builder received the escrowed reward.
               </p>
             )}
             {isRejected && (
               <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">
-                This submission was not approved. The bounty escrow remains for other
-                builders.
+                This submission was not approved. The bounty escrow remains open for other submissions.
               </p>
             )}
-            {isUndetermined && (
+            {isApplicationUndetermined && (
               <>
                 <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">
-                  This review could not be determined due to unreachable evidence
-                  links. You can retry review if the links have been made public.
+                  This review returned an on-chain UNDETERMINED outcome due to transient evidence issues. You can retry the review.
                 </p>
                 <button
                   onClick={() => void adjudicate()}
@@ -425,11 +551,24 @@ export function ReviewRecord() {
                 </button>
               </>
             )}
+            {isNetworkUndetermined && (
+              <>
+                <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">
+                  The last consensus transaction did not reach finality. You can re-send the review transaction.
+                </p>
+                <button
+                  onClick={() => void adjudicate()}
+                  disabled={reviewing}
+                  className="mt-5 inline-flex rounded-full bg-[#db6b5e] px-5 py-3 text-sm text-white shadow-[3px_3px_0_var(--ink)] transition hover:-translate-y-0.5 hover:bg-[#b95046] disabled:cursor-wait disabled:opacity-60"
+                >
+                  {reviewing ? "Opening wallet…" : "Re-send review transaction"}
+                </button>
+              </>
+            )}
             {isSubmitted && (
               <>
                 <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">
-                  This submission is awaiting intelligent review. Anyone can start the
-                  adjudication process.
+                  This submission is awaiting intelligent review. Anyone can start the adjudication process.
                 </p>
                 <button
                   onClick={() => void adjudicate()}
@@ -440,7 +579,7 @@ export function ReviewRecord() {
                 </button>
               </>
             )}
-            {!isSubmitted && !verdict && !isUndetermined && (
+            {!isSubmitted && !verdict && !isApplicationUndetermined && !isNetworkUndetermined && (
               <p className="mono mt-4 text-[9px] tracking-[0.08em] text-[var(--muted-ink)]">
                 NO FINALIZED VERDICT
               </p>

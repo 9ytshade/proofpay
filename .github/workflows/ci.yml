@@ -1,0 +1,87 @@
+name: ProofPay CI
+
+on:
+  push:
+    branches: [main, proofpay-v2-hardening]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "24"
+  GENVM_VERSION: "v0.2.12"
+
+jobs:
+  contract-checks:
+    name: Contract linter and Direct Mode tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache GenVM root
+        id: cache-genvm
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/genvm-linter/genvmroot
+          key: genvm-${{ env.GENVM_VERSION }}
+
+      - name: Download and extract GenVM standard library
+        if: steps.cache-genvm.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.cache/genvm-linter/genvmroot
+          curl -fsSL "https://github.com/genlayer/genvm/releases/download/${{ env.GENVM_VERSION }}/genvm-universal-${{ env.GENVM_VERSION }}.tar.xz" \
+            -o /tmp/genvm.tar.xz
+          tar -xf /tmp/genvm.tar.xz -C /tmp/genvm-extracted
+          cp -r /tmp/genvm-extracted/runners ~/.cache/genvm-linter/genvmroot/runners
+          rm -rf /tmp/genvm.tar.xz /tmp/genvm-extracted
+
+      - name: Run contract linter
+        env:
+          GENVMROOT: ~/.cache/genvm-linter/genvmroot
+          PYTHONIOENCODING: utf-8
+        run: |
+          genvm-lint contracts/proofpay.py
+          genvm-lint validate contracts/proofpay.py
+
+      - name: Run Direct Mode test suite
+        run: python -m pytest tests/direct/ -v --tb=short
+
+  frontend-checks:
+    name: Frontend tests, lint, and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build

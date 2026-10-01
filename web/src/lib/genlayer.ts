@@ -99,21 +99,54 @@ export async function readFinalContract(functionName: string, args: CalldataEnco
   throw new Error("Unable to reach GenLayer RPC after retrying.");
 }
 
+export async function checkContractVersionCompatibility(): Promise<{ compatible: boolean; version?: string; error?: string }> {
+  try {
+    const version = await readFinalContract("get_contract_version", []);
+    if (typeof version === "string" && version === "2.0.0") {
+      return { compatible: true, version };
+    }
+    const versionStr = typeof version === "string" ? version : String(version ?? "unknown");
+    return {
+      compatible: false,
+      version: versionStr,
+      error: `Contract at ${shortAddress(proofPayContractAddress)} is version "${versionStr}", but ProofPay v2 requires version "2.0.0".`,
+    };
+  } catch (error) {
+    return {
+      compatible: false,
+      error: error instanceof Error ? error.message : "Unable to verify contract version at the configured address.",
+    };
+  }
+}
+
 /**
- * The deployed MVP assigns sequential bounty IDs but has no list method.
- * Read finalized IDs until the first missing record, without maintaining a
- * manual frontend list. A later contract version can replace this with a
- * bounded get_bounty_count/list_bounties read.
+ * ProofPay v2 defines get_bounty_count().
+ * Reads bounded canonical finalized bounties (1..count) using batch concurrency.
  */
 export async function discoverFinalBounties(): Promise<unknown[]> {
+  const rawCount = await readFinalContract("get_bounty_count", []);
+  const count = typeof rawCount === "bigint" ? Number(rawCount) : Number(rawCount ?? 0);
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    return [];
+  }
+  const limit = Math.min(count, proofPayDiscoveryLimit);
+  const ids = Array.from({ length: limit }, (_, index) => index + 1);
+
   const bounties: unknown[] = [];
-  for (let bountyId = 1; bountyId <= proofPayDiscoveryLimit; bountyId += 1) {
-    try {
-      const bounty = await readFinalContract("get_bounty", [bountyId]);
-      bounties.push(bounty);
-    } catch (error) {
-      if (bountyId === 1) throw error;
-      break;
+  const batchSize = 10;
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const slice = ids.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      slice.map(async (bountyId) => {
+        try {
+          return await readFinalContract("get_bounty", [bountyId]);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    for (const res of batchResults) {
+      if (res !== null) bounties.push(res);
     }
   }
   return bounties;

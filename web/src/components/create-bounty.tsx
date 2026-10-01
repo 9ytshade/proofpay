@@ -1,7 +1,11 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { createProofPayClient, proofPayContractAddress } from "@/lib/genlayer";
+import {
+  checkContractVersionCompatibility,
+  createProofPayClient,
+  proofPayContractAddress,
+} from "@/lib/genlayer";
 import { TransactionLifecycle } from "@/components/transaction-lifecycle";
 import { isFutureUnixTimestamp, parseGenToWei } from "@/lib/safety";
 
@@ -53,6 +57,11 @@ export function CreateBounty() {
       if (!isFutureUnixTimestamp(deadline)) throw new Error("Choose a future deadline.");
       if (reward <= BigInt(0)) throw new Error("The escrow reward must be greater than zero.");
       if (!window.ethereum) throw new Error("Install or unlock MetaMask before creating a bounty.");
+
+      const versionCheck = await checkContractVersionCompatibility();
+      if (!versionCheck.compatible) {
+        throw new Error(versionCheck.error ?? "The contract version is incompatible with ProofPay v2.");
+      }
 
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
       const address = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : undefined;

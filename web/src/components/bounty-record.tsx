@@ -23,20 +23,32 @@ type Submission = {
   submission_id: number | string;
   builder: string;
   repository_url: string;
+  repository_owner?: string;
+  repository_name?: string;
+  commit_sha?: string;
+  evidence_paths?: string;
   deployment_url: string;
   summary: string;
   status: string;
   score: number | string;
   reason: string;
   verdict_id: number | string;
+  review_count?: number | string;
+  last_outcome?: string;
 };
 
 type Verdict = {
+  id?: number | string;
+  bounty_id?: number | string;
+  submission_id?: number | string;
   approved: boolean;
   required_criteria_passed: boolean;
+  outcome?: string;
   score: number | string;
+  criteria_results?: string[];
   criteria_report: string;
   reason: string;
+  evidence_note?: string;
 };
 
 type SubmissionRecord = { submission: Submission; verdict?: Verdict };
@@ -217,28 +229,93 @@ export function BountyRecord() {
               <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted-ink)]">No submissions have been recorded for this bounty.</p>
             ) : (
               <div className="mt-5 divide-y divide-[var(--line)] border-y border-[var(--line)]">
-                {submissions.map(({ submission, verdict }) => (
-                  <article id={`submission-${submission.submission_id}`} key={String(submission.submission_id)} className="scroll-mt-8 py-6">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <p className="mono text-[10px] tracking-[0.08em]">EVIDENCE #{submission.submission_id} · BUILDER {shortAddress(submission.builder)}</p>
-                      <span className={`status-badge status-${submission.status.toLowerCase()}`}>{submission.status.toUpperCase()}</span>
-                    </div>
-                    <p className="mt-4 leading-6">{submission.summary}</p>
-                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-                      <EvidenceLink href={submission.repository_url}>VIEW SOURCE COMMIT ↗</EvidenceLink>
-                      <EvidenceLink href={submission.deployment_url}>VIEW DEPLOYMENT ↗</EvidenceLink>
-                    </div>
-                    {verdict ? (
-                      <div className={`verdict-card ${verdict.approved ? "verdict-approved" : "verdict-rejected"}`}>
-                        <div className="flex flex-wrap justify-between gap-3"><p className="mono text-[10px] tracking-[0.08em]">{verdict.approved ? "APPROVED" : "NOT APPROVED"}</p><p className="mono text-[10px]">SCORE {verdict.score}/100</p></div>
-                        <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
-                        <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">{verdict.criteria_report}</p>
+                {submissions.map(({ submission, verdict }) => {
+                  const paths = submission.evidence_paths
+                    ? submission.evidence_paths.split("\n").map((p) => p.trim()).filter(Boolean)
+                    : [];
+                  const shortSha = submission.commit_sha
+                    ? `${submission.commit_sha.slice(0, 7)}…${submission.commit_sha.slice(-7)}`
+                    : null;
+                  return (
+                    <article id={`submission-${submission.submission_id}`} key={String(submission.submission_id)} className="scroll-mt-8 py-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="mono text-[10px] tracking-[0.08em]">
+                          EVIDENCE #{submission.submission_id} · BUILDER {shortAddress(submission.builder)}
+                          {shortSha && <span className="ml-2 text-[var(--muted-ink)]">({shortSha})</span>}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {submission.last_outcome && (
+                            <span className={`mono rounded-full px-2 py-0.5 text-[9px] tracking-[0.06em] ${
+                              submission.last_outcome === "APPROVED"
+                                ? "bg-[var(--verdict)] text-[#18231f]"
+                                : submission.last_outcome === "REJECTED"
+                                  ? "bg-[#db6b5e]/20 text-[#b95046]"
+                                  : "bg-[#e09138]/20 text-[#c27623]"
+                            }`}>
+                              {submission.last_outcome}
+                            </span>
+                          )}
+                          <span className={`status-badge status-${submission.status.toLowerCase()}`}>{submission.status.toUpperCase()}</span>
+                        </div>
                       </div>
-                    ) : (
-                      <p className="mono mt-4 text-[9px] tracking-[0.08em] text-[var(--muted-ink)]">NO FINALIZED VERDICT</p>
-                    )}
-                  </article>
-                ))}
+                      <p className="mt-4 leading-6">{submission.summary}</p>
+                      {paths.length > 0 && (
+                        <div className="mt-3">
+                          <p className="mono text-[9px] tracking-[.08em] text-[var(--muted-ink)]">BOUNDED EVIDENCE PATHS ({paths.length}):</p>
+                          <ul className="mt-1 flex flex-wrap gap-2">
+                            {paths.map((path) => (
+                              <li key={path} className="mono rounded border border-[var(--line)] bg-[var(--card)] px-2 py-0.5 text-[10px] text-[var(--ink)]">
+                                {path}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+                        <EvidenceLink href={submission.repository_url}>
+                          {submission.commit_sha ? `COMMIT ${submission.commit_sha.slice(0, 10)}… ↗` : "VIEW SOURCE COMMIT ↗"}
+                        </EvidenceLink>
+                        <EvidenceLink href={submission.deployment_url}>VIEW DEPLOYMENT ↗</EvidenceLink>
+                        <Link href={`/reviews/${bounty.id}/${submission.submission_id}`} className="mono text-[9px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4">
+                          ADJUDICATE / REVIEW →
+                        </Link>
+                      </div>
+                      {verdict ? (
+                        <div className={`verdict-card ${verdict.approved ? "verdict-approved" : "verdict-rejected"}`}>
+                          <div className="flex flex-wrap justify-between gap-3">
+                            <p className="mono text-[10px] tracking-[0.08em]">
+                              {verdict.approved ? "APPROVED" : "NOT APPROVED"}
+                              {verdict.outcome && <span className="ml-2 font-bold">({verdict.outcome})</span>}
+                            </p>
+                            <p className="mono text-[10px]">SCORE {verdict.score}/100</p>
+                          </div>
+                          <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
+                          {verdict.criteria_results && verdict.criteria_results.length > 0 && (
+                            <div className="mt-3 border-t border-current/15 pt-3">
+                              <p className="mono text-[9px] tracking-[.08em] mb-2 font-medium">CRITERIA CONSENSUS RESULTS:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {verdict.criteria_results.map((res, idx) => (
+                                  <span key={idx} className={`mono rounded px-2 py-0.5 text-[9px] font-bold ${
+                                    res === "PASS"
+                                      ? "bg-green-700/20 text-green-800"
+                                      : res === "FAIL"
+                                        ? "bg-red-700/20 text-red-800"
+                                        : "bg-amber-700/20 text-amber-800"
+                                  }`}>
+                                    C{idx + 1}: {res}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">{verdict.criteria_report}</p>
+                        </div>
+                      ) : (
+                        <p className="mono mt-4 text-[9px] tracking-[0.08em] text-[var(--muted-ink)]">NO FINALIZED VERDICT</p>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
