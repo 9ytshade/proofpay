@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isFutureUnixTimestamp, isHttpsUrl, isPublicGithubUrl, parseGenToWei } from "./safety";
+import { isFutureUnixTimestamp, isHttpsUrl, isPublicGithubCommitUrl, normalizeHttpsUrl, parseGenToWei } from "./safety";
 import { genLayerTransactionUrl } from "./genlayer";
 
 describe("ProofPay client safety rules", () => {
@@ -21,11 +21,32 @@ describe("ProofPay client safety rules", () => {
     expect(isHttpsUrl("not a url")).toBe(false);
   });
 
-  it("requires a public GitHub repository-shaped URL", () => {
-    expect(isPublicGithubUrl("https://github.com/vercel/next.js")).toBe(true);
-    expect(isPublicGithubUrl("https://github.com/vercel")).toBe(false);
-    expect(isPublicGithubUrl("https://github.com.evil.example/vercel/next.js")).toBe(false);
-    expect(isPublicGithubUrl("http://github.com/vercel/next.js")).toBe(false);
+  it("normalizes bare HTTPS domains with a trailing slash for contract compatibility", () => {
+    expect(normalizeHttpsUrl("https://example.com")).toBe("https://example.com/");
+    expect(normalizeHttpsUrl("https://example.com/app")).toBe("https://example.com/app");
+    expect(normalizeHttpsUrl("https://example.com/")).toBe("https://example.com/");
+  });
+
+  it("requires a canonical full GitHub commit permalink", () => {
+    const commitSha = "a".repeat(40);
+    expect(isPublicGithubCommitUrl(`https://github.com/vercel/next.js/commit/${commitSha}`)).toBe(true);
+    expect(isPublicGithubCommitUrl(`https://github.com/vercel/next.js/commit/${commitSha.toUpperCase()}`)).toBe(true);
+
+    for (const value of [
+      "https://github.com/vercel/next.js",
+      "https://github.com/vercel/next.js/tree/main",
+      "https://github.com/vercel",
+      `https://github.com/vercel/next.js/commit/${commitSha.slice(0, 8)}`,
+      `https://github.com/vercel/next.js/commit/${commitSha}?tab=readme`,
+      `https://github.com/vercel/next.js/commit/${commitSha}#diff`,
+      `https://github.com@evil.example/vercel/next.js/commit/${commitSha}`,
+      `https://github.com.evil.example/vercel/next.js/commit/${commitSha}`,
+      `https://github.com/vercel/next.js/commit/${commitSha}/extra`,
+      `https://github.com/vercel/repo%2Fname/commit/${commitSha}`,
+      `http://github.com/vercel/next.js/commit/${commitSha}`,
+    ]) {
+      expect(isPublicGithubCommitUrl(value)).toBe(false);
+    }
   });
 
   it("requires a deadline after the current time", () => {

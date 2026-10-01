@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   discoverFinalBounties,
   formatGen,
@@ -21,6 +22,7 @@ type Bounty = {
 };
 
 type DeskState = "loading" | "ready" | "error";
+type BountyDeskMode = "featured" | "all";
 
 function toBounty(value: unknown): Bounty | null {
   if (!value || typeof value !== "object") return null;
@@ -53,10 +55,12 @@ function deadlineState(value: number | string, status: string) {
 
 function statusClass(status: string) { return `status-badge status-${status.toLowerCase()}`; }
 
-export function BountyDesk() {
+export function BountyDesk({ mode = "featured" }: { mode?: BountyDeskMode }) {
   const [bounties, setBounties] = useState<Bounty[]>([]);
   const [state, setState] = useState<DeskState>("loading");
   const [selected, setSelected] = useState<Bounty | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const loadBounties = useCallback(async () => {
     setState("loading");
@@ -76,26 +80,43 @@ export function BountyDesk() {
     return () => window.clearTimeout(loadTimer);
   }, [loadBounties]);
 
+  const filteredBounties = bounties.filter((bounty) => {
+    const matchesSearch = `${bounty.title} ${bounty.brief}`.toLowerCase().includes(search.trim().toLowerCase());
+    return matchesSearch && (statusFilter === "all" || bounty.status === statusFilter);
+  });
+  const visibleBounties = mode === "featured" ? filteredBounties.slice(0, 3) : filteredBounties;
+
   return (
     <>
-      <section id="bounties" className="reveal reveal-delay-3 border-y border-[var(--ink)] py-4">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div><p className="mono text-[10px] tracking-[0.12em] text-[var(--muted-ink)]">FINALIZED BOUNTY RECORD</p><p className="mt-1 text-sm text-[var(--muted-ink)]">Read directly from ProofPay on Studionet.</p></div>
-          <div className="flex items-center gap-2"><span className="mono rounded-full bg-[var(--verdict)] px-3 py-1 text-[10px] tracking-[0.08em]">{state === "ready" ? `${bounties.length} ON-CHAIN` : "SYNCING"}</span><button onClick={() => void loadBounties()} className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]">REFRESH</button></div>
+      <section id="bounties" className="reveal reveal-delay-3 border-y border-[var(--ink)] py-5 sm:py-7">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div><p className="mono text-[10px] tracking-[0.12em] text-[var(--muted-ink)]">{mode === "featured" ? "RECENT BOUNTIES" : "FINALIZED BOUNTY RECORDS"}</p><p className="mt-1 text-sm text-[var(--muted-ink)]">Read directly from ProofPay on Studionet.</p></div>
+          <div className="flex items-center gap-2"><span className="mono rounded-full bg-[var(--verdict)] px-3 py-1 text-[10px] font-medium tracking-[0.08em] text-[#18231f]">{state === "ready" ? `${bounties.length} ON-CHAIN` : "SYNCING"}</span><button onClick={() => void loadBounties()} className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]">REFRESH</button></div>
         </div>
+        {mode === "featured" && <div className="mb-4 flex justify-end"><Link href="/bounties" className="mono text-[10px] tracking-[.08em] text-[var(--signal)] underline underline-offset-4">BROWSE ALL BOUNTIES →</Link></div>}
+        {mode === "all" && <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_12rem]"><label className="sr-only" htmlFor="bounty-search">Search bounty records</label><input id="bounty-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search titles and briefs" className="min-w-0 border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)] focus:border-[var(--signal)]" /><label className="sr-only" htmlFor="bounty-status">Filter by bounty status</label><select id="bounty-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--signal)]"><option value="all">All statuses</option><option value="open">Open</option><option value="awarded">Awarded</option><option value="cancelled">Cancelled</option><option value="refunded">Refunded</option></select></div>}
         {state === "loading" && <DeskPlaceholder />}
         {state === "error" && <DeskEmpty title="The public record is temporarily out of reach." copy="Check your internet connection, then refresh the finalized Studionet record." action={() => void loadBounties()} />}
         {state === "ready" && bounties.length === 0 && <DeskEmpty title="No bounties have been published yet." copy="Be the first client to lock an outcome and make the public case." />}
-        {state === "ready" && bounties.length > 0 && <div className="grid divide-y divide-[var(--line)] md:grid-cols-2 md:divide-x md:divide-y-0">{bounties.map((bounty) => <BountyCard bounty={bounty} key={String(bounty.id)} onOpen={() => setSelected(bounty)} />)}</div>}
+        {state === "ready" && bounties.length > 0 && visibleBounties.length === 0 && <DeskEmpty title="No matching bounty records." copy="Try another search or status filter." />}
+        {state === "ready" && visibleBounties.length > 0 && <div className="grid divide-y divide-[var(--line)] md:grid-cols-2 md:divide-x md:divide-y-0">{visibleBounties.map((bounty) => <BountyCard bounty={bounty} key={String(bounty.id)} onQuickView={() => setSelected(bounty)} />)}</div>}
       </section>
       {selected && <BountyDetail bounty={selected} onClose={() => setSelected(null)} />}
     </>
   );
 }
 
-function BountyCard({ bounty, onOpen }: { bounty: Bounty; onOpen: () => void }) {
+function BountyCard({ bounty, onQuickView }: { bounty: Bounty; onQuickView: () => void }) {
   const status = bounty.status.toUpperCase();
-  return <button onClick={onOpen} className="group bg-[var(--paper)] p-5 text-left transition hover:bg-[var(--card)] md:first:pl-0 md:last:pr-0"><div className="flex items-center justify-between gap-3 text-[var(--muted-ink)]"><span className="mono text-[10px] tracking-[0.1em]">CASE #{bounty.id}</span><span className={statusClass(bounty.status)}>{status}</span></div><h3 className="mt-7 max-w-[23rem] text-3xl leading-[0.95] tracking-[-0.05em] transition group-hover:text-[var(--signal)]">{bounty.title}</h3><p className="mt-3 line-clamp-2 max-w-xl text-sm leading-5 text-[var(--muted-ink)]">{bounty.brief}</p><div className="mt-7 flex items-end justify-between border-t border-[var(--line)] pt-3"><div><span className="mono text-xs text-[var(--signal)]">{formatGen(bounty.reward)} GEN</span><p className="mono mt-1 text-[9px] tracking-[.06em] text-[var(--muted-ink)]">{bounty.submission_count} SUBMISSION{Number(bounty.submission_count) === 1 ? "" : "S"} · {deadlineState(bounty.deadline, bounty.status).toUpperCase()}</p></div><span aria-hidden="true" className="text-xl transition group-hover:translate-x-1">↗</span></div></button>;
+  return <article className="group bg-[var(--paper)] p-5 transition hover:bg-[var(--card)] md:first:pl-0 md:last:pr-0">
+    <Link href={`/bounties/${bounty.id}`} className="block rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--signal)]">
+      <div className="flex items-center justify-between gap-3 text-[var(--muted-ink)]"><span className="mono text-[10px] tracking-[0.1em]">CASE #{bounty.id}</span><span className={statusClass(bounty.status)}>{status}</span></div>
+      <h3 className="mt-7 max-w-[23rem] text-3xl leading-[0.95] tracking-[-0.05em] transition group-hover:text-[var(--signal)]">{bounty.title}</h3>
+      <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-5 text-[var(--muted-ink)]">{bounty.brief}</p>
+      <div className="mt-7 flex items-end justify-between border-t border-[var(--line)] pt-3"><div><span className="mono text-xs text-[var(--signal)]">{formatGen(bounty.reward)} GEN</span><p className="mono mt-1 text-[9px] tracking-[.06em] text-[var(--muted-ink)]">{bounty.submission_count} SUBMISSION{Number(bounty.submission_count) === 1 ? "" : "S"} · {deadlineState(bounty.deadline, bounty.status).toUpperCase()}</p></div><span aria-hidden="true" className="text-xl transition group-hover:translate-x-1">↗</span></div>
+    </Link>
+    <button onClick={onQuickView} className="mono mt-4 text-[9px] tracking-[.08em] text-[var(--muted-ink)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]">QUICK VIEW</button>
+  </article>;
 }
 
 function BountyDetail({ bounty, onClose }: { bounty: Bounty; onClose: () => void }) {

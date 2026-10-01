@@ -85,7 +85,28 @@ export function CreateBounty() {
           <div className="mt-5 grid gap-5 sm:grid-cols-[1fr_13rem]"><Field label="ACCEPTANCE CRITERIA" hint={`${criteriaCount}/5 criteria — one per line`}><textarea required value={values.criteria} onChange={(event) => update("criteria", event.target.value)} maxLength={3000} rows={5} placeholder={"A public GitHub repository is accessible\nThe live deployment works over HTTPS\nThe handoff explains how to verify it"} /></Field><Field label="DEADLINE" hint="UTC time"><input required type="datetime-local" value={values.deadline} onChange={(event) => update("deadline", event.target.value)} /></Field></div>
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-5"><p className="max-w-md text-sm leading-5 text-[var(--muted-ink)]">By creating this bounty, you publish the brief and permanently escrow the displayed reward until ProofPay settles it.</p><button type="submit" disabled={state === "submitting"} className="rounded-full bg-[var(--signal)] px-6 py-3 text-sm text-white shadow-[4px_4px_0_var(--ink)] transition hover:-translate-y-0.5 hover:bg-[var(--signal-dark)] disabled:cursor-wait disabled:opacity-60">{state === "submitting" ? "Awaiting wallet…" : "Fund & publish bounty"}</button></div>
           {message && <div className={`creator-message ${state === "error" ? "creator-message-error" : ""}`} role="status"><p>{message}</p>{transactionHash && <p className="mono mt-2 text-[10px] tracking-[.07em]">TRANSACTION {shortHash(transactionHash)}</p>}{state === "submitted" && <p className="mt-2 text-xs text-[var(--muted-ink)]">After successful finalization, refresh the bounty desk. ProofPay discovers finalized cases automatically.</p>}</div>}
-          {transactionHash && <TransactionLifecycle hash={transactionHash} action="Bounty creation" />}
+          {transactionHash && (
+            <TransactionLifecycle
+              hash={transactionHash}
+              action="Bounty creation"
+              onDismiss={() => {
+                if (state === "error") {
+                  setState("idle");
+                }
+              }}
+              onStatusChange={(status) => {
+                if (status.done) {
+                  if (status.failed) {
+                    setState("error");
+                    setMessage(status.errorReason ? `Bounty creation reverted: ${status.errorReason}` : "Bounty creation reverted on-chain.");
+                  } else {
+                    setState("submitted");
+                    setMessage("Your bounty has been finalized and funded on GenLayer! It is now live on the bounty desk.");
+                  }
+                }
+              }}
+            />
+          )}
         </form>
       </div>
     </section>

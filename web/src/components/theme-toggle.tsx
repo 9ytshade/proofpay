@@ -47,8 +47,8 @@ export function ThemeToggle() {
           <path d="M12 2.5v2M12 19.5v2M21.5 12h-2M4.5 12h-2M18.72 5.28 17.3 6.7M6.7 17.3l-1.42 1.42M18.72 18.72 17.3 17.3M6.7 6.7 5.28 5.28" />
         </svg>
       ) : (
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-          <path d="M20.2 15.62A8.3 8.3 0 0 1 8.38 3.8 8.31 8.31 0 1 0 20.2 15.62Z" />
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-current">
+          <path d="M19.8 15.3A8.5 8.5 0 0 1 8.7 4.2 8.5 8.5 0 1 0 19.8 15.3Z" />
         </svg>
       )}
     </button>

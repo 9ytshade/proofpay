@@ -1,0 +1,476 @@
+Do not redesign the project from scratch.
+Do not replace the current visual identity.
+Do not simplify the contract.
+Do not turn it into a generic dashboard template.
+
+The current direction is good. The main issue is that the frontend currently behaves like one long landing page even though the product already has enough distinct user flows to justify a proper multi-route application.
+
+The goal of this pass is to make ProofPay feel like a complete product rather than a one-page showcase, while preserving the existing contract logic, styling language, wallet integration, transaction lifecycle handling and Studionet integration.
+
+1. Convert the frontend into a real multi-route app
+
+The current homepage mounts almost every major workflow into one page:
+
+bounty discovery
+
+create bounty
+
+proof submission
+
+review/adjudication
+
+marketing/how-it-works sections
+
+Refactor this into purposeful routes.
+
+Use a structure along these lines:
+
+/
+
+proper landing/home page
+
+explain ProofPay briefly
+
+featured/recent bounties
+
+clear entry points into the actual app
+
+/bounties
+
+browse all finalized on-chain bounties
+
+status, reward, deadline, submission count
+
+filters/search if useful, but do not overcomplicate it
+
+/bounties/[id]
+
+this is important
+
+every bounty must have its own proper shareable URL
+
+show full brief
+
+acceptance criteria
+
+escrow amount
+
+client
+
+deadline
+
+status
+
+submission count
+
+approved submission if any
+
+submitted evidence records
+
+verdicts where available
+
+actions appropriate to the current user/state
+
+/bounties/create
+
+move the create-bounty workflow here
+
+/bounties/[id]/submit
+
+submit proof for that specific bounty
+
+the user should not have to manually type a bounty ID if they arrived from the bounty page
+
+/reviews
+
+list submissions awaiting adjudication
+
+also show already adjudicated records where useful
+
+/reviews/[bountyId]/[submissionId]
+
+full evidence/review page
+
+repository URL
+
+deployment URL
+
+builder summary
+
+criteria
+
+current verdict
+
+score
+
+reasoning
+
+transaction state
+
+button to trigger intelligent review when allowed
+
+Do not add routes just for appearance. Every route must correspond to a real user job.
+
+2. Keep the current design language
+
+The current visual direction is distinctive and should be preserved.
+
+Keep:
+
+typography style
+
+paper/editorial feel
+
+current spacing philosophy
+
+ProofPay branding
+
+status badges
+
+current wallet styling
+
+existing transaction lifecycle component
+
+current responsive behaviour where it works
+
+Do not replace this with a generic shadcn/admin dashboard look.
+
+Improve navigation so the application feels coherent across pages.
+
+Add a persistent app-level navigation with sensible links such as:
+
+home
+
+bounties
+
+create
+
+reviews
+
+wallet control
+
+Mobile navigation must also work properly.
+
+3. Make bounty pages the centre of the product
+
+The current modal detail sheet is useful, but it should not be the only way to inspect a bounty.
+
+Create a proper bounty detail page at:
+
+/bounties/[id]
+
+The bounty card on /bounties should navigate there.
+
+The page should read directly from finalized GenLayer state.
+
+Do not introduce mock bounty data.
+
+The page should become the authoritative public record for that bounty.
+
+Where relevant, show:
+
+bounty ID
+
+title
+
+brief
+
+criteria
+
+escrow
+
+client
+
+deadline
+
+status
+
+submission count
+
+approved submission
+
+builder submissions
+
+verdicts
+
+repository/deployment evidence
+
+explorer/transaction references if available
+
+4. Improve workflow continuity
+
+The app should guide users naturally.
+
+Examples:
+
+From a bounty page:
+
+builder clicks submit proof
+
+lands at /bounties/[id]/submit
+
+bounty ID is already known
+
+From a submission/review page:
+
+reviewer clicks start intelligent review
+
+transaction lifecycle appears there
+
+once finalized, refresh the canonical contract state
+
+the updated verdict should appear without requiring the user to guess what happened
+
+From a bounty that is already awarded:
+
+do not show actions that no longer apply
+
+clearly show the winning submission and settlement state
+
+From an expired/refunded/cancelled bounty:
+
+make the terminal state understandable
+
+5. Keep the existing wallet/network safety
+
+Do not regress any existing wallet behaviour.
+
+Preserve:
+
+Studionet configuration
+
+account connect
+
+disconnect
+
+account switching
+
+wrong-network detection
+
+safe network switching
+
+accountsChanged
+
+chainChanged
+
+visible GEN balance
+
+understandable wallet errors
+
+Do not introduce a second wallet abstraction unless there is a genuine reason.
+
+6. Keep transaction lifecycle handling
+
+Preserve the distinction between:
+
+submitted
+
+proposing
+
+committing
+
+revealing
+
+accepted
+
+finalized
+
+undetermined
+
+cancelled
+
+validator timeout
+
+leader timeout
+
+finalized failure
+
+Do not present ACCEPTED as final success.
+
+After a write reaches finalization, refresh canonical state.
+
+Keep explorer links and transaction IDs visible.
+
+7. Strengthen the adjudication design without changing the product concept
+
+The current contract is already meaningful, but review these two areas carefully.
+
+A. Stronger substantive validator agreement
+
+Current validator agreement mainly checks:
+
+approved
+
+required_criteria_passed
+
+score within tolerance
+
+Review whether the validator should also substantively agree on the individual criteria outcome rather than only the high-level result.
+
+If you change this, keep the output bounded and deterministic enough for validator comparison.
+
+Do not add complexity just for the sake of it.
+
+B. Evidence mutability
+
+Currently builders submit public URLs and adjudication fetches those URLs later.
+
+Review whether a submission should also bind immutable evidence identity at submission time, such as:
+
+content digest
+
+source metadata
+
+immutable snapshot reference
+
+commit SHA where applicable
+
+The goal is to prevent submitted evidence from silently changing between submission and adjudication.
+
+Do not invent off-chain trusted infrastructure.
+
+If the best version can be implemented cleanly on GenLayer, do it and add tests.
+
+If it would require a substantial protocol redesign, document the limitation clearly instead of forcing a bad implementation.
+
+8. Fix obvious UX dead ends
+
+Audit every button and CTA.
+
+For example, the current:
+
+Read the protocol →
+
+must either navigate somewhere real or be removed.
+
+There should be no decorative button that does nothing.
+
+Also check:
+
+empty states
+
+loading states
+
+error states
+
+disabled states
+
+wrong-wallet state
+
+adjudication in progress
+
+no submissions
+
+no bounties
+
+awarded bounty
+
+rejected submission
+
+refunded/cancelled bounty
+
+9. Tests and engineering
+
+Do not break the existing contract suite.
+
+Run all existing tests.
+
+Add tests for any contract behaviour you change.
+
+Also add frontend tests where useful for:
+
+route behaviour
+
+bounty ID propagation
+
+safety parsing
+
+terminal states
+
+action visibility
+
+Add GitHub Actions if practical so the final commit proves:
+
+contract tests pass
+
+frontend tests pass
+
+lint passes
+
+build passes
+
+Do not fake CI evidence.
+
+10. Do not mix networks
+
+For the current live app:
+
+use GenLayer Studionet
+
+chain ID 61999
+
+Do not accidentally wire the production frontend to Studio-dev 61997.
+
+The repository contains separate Studio-dev/v0.6 preview documentation. Keep that distinction clear.
+
+11. Final verification
+
+Before declaring completion, verify:
+
+the app is genuinely multi-routed;
+
+no major workflow depends on scrolling around one homepage;
+
+every bounty has a shareable detail URL;
+
+proof submission can start from the correct bounty page without manually entering the bounty ID;
+
+reviews have their own proper route;
+
+live reads still come from the deployed ProofPay contract;
+
+wallet/network handling still works;
+
+transaction states remain visible through finality;
+
+no CTA is dead;
+
+the frontend builds cleanly;
+
+contract tests remain green;
+
+no mock data was introduced into the live flow.
+
+Final handoff
+
+When finished, report:
+
+final commit SHA
+
+route map
+
+files changed
+
+contract changes, if any
+
+reason for each contract change
+
+exact test commands
+
+test counts
+
+frontend build result
+
+CI run URL if added
+
+deployed/live URL
+
+configured contract address
+
+Studionet 61999 confirmation
+
+short explanation of how bounty navigation now works
+
+short explanation of any evidence/adjudication hardening completed
+
+Do not say complete until the product behaves like a real multi-route bounty marketplace rather than a one-page landing page with all workflows embedded into it.

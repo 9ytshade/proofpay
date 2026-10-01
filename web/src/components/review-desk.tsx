@@ -1,67 +1,590 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createProofPayClient, discoverFinalBounties, formatGen, proofPayContractAddress, readFinalContract, shortAddress } from "@/lib/genlayer";
+import Link from "next/link";
+import {
+  createProofPayClient,
+  discoverFinalBounties,
+  formatGen,
+  genLayerTransactionUrl,
+  proofPayContractAddress,
+  readFinalContract,
+  shortAddress,
+} from "@/lib/genlayer";
+import {
+  getReviewTxMap,
+  getUndeterminedReviews,
+  markUndeterminedReview,
+  saveReviewTx,
+  type UndeterminedInfo,
+} from "@/lib/safety";
 import { TransactionLifecycle } from "@/components/transaction-lifecycle";
 
-type Bounty = { id: number | string; title: string; reward: string; status: string; submission_count: number | string; approved_submission_id: number | string };
-type Submission = { bounty_id: number | string; submission_id: number | string; builder: string; repository_url: string; deployment_url: string; summary: string; status: string; score: number | string; reason: string; verdict_id: number | string };
-type Verdict = { approved: boolean; required_criteria_passed: boolean; score: number | string; criteria_report: string; reason: string };
-type ReviewRecord = { bounty: Bounty; submission: Submission; verdict?: Verdict };
+type Bounty = {
+  id: number | string;
+  title: string;
+  reward: string;
+  status: string;
+  submission_count: number | string;
+  approved_submission_id: number | string;
+};
 
-function isRecord(value: unknown, keys: string[]) { return Boolean(value) && typeof value === "object" && !keys.some((key) => (value as Record<string, unknown>)[key] === undefined); }
-function shortHash(hash: string) { return `${hash.slice(0, 10)}…${hash.slice(-8)}`; }
+type Submission = {
+  bounty_id: number | string;
+  submission_id: number | string;
+  builder: string;
+  repository_url: string;
+  deployment_url: string;
+  summary: string;
+  status: string;
+  score: number | string;
+  reason: string;
+  verdict_id: number | string;
+};
+
+type Verdict = {
+  approved: boolean;
+  required_criteria_passed: boolean;
+  score: number | string;
+  criteria_report: string;
+  reason: string;
+};
+
+type ReviewRecord = {
+  bounty: Bounty;
+  submission: Submission;
+  verdict?: Verdict;
+};
+
+function isRecord(value: unknown, keys: string[]) {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !keys.some((key) => (value as Record<string, unknown>)[key] === undefined)
+  );
+}
+
+function shortHash(hash: string) {
+  return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
+}
+
+function getDisplayStatus(
+  record: ReviewRecord,
+  undeterminedMap: Record<string, UndeterminedInfo>,
+): "submitted" | "approved" | "rejected" | "undetermined" {
+  if (record.submission.status === "approved") return "approved";
+  if (record.submission.status === "rejected") return "rejected";
+  const key = `${record.bounty.id}:${record.submission.submission_id}`;
+  if (undeterminedMap[key]) return "undetermined";
+  return "submitted";
+}
 
 export function ReviewDesk() {
   const [records, setRecords] = useState<ReviewRecord[]>([]);
+  const [undeterminedMap, setUndeterminedMap] = useState<
+    Record<string, UndeterminedInfo>
+  >(getUndeterminedReviews);
+  const [reviewTxMap, setReviewTxMap] = useState<Record<string, string>>(
+    getReviewTxMap,
+  );
+  const [copiedHash, setCopiedHash] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reviewing, setReviewing] = useState("");
-  const [transactionHash, setTransactionHash] = useState("");
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [activeTxHash, setActiveTxHash] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  function copyTxHash(hash: string) {
+    void navigator.clipboard.writeText(hash);
+    setCopiedHash(hash);
+    window.setTimeout(() => setCopiedHash(""), 2000);
+  }
 
   const loadRecords = useCallback(async () => {
-    setLoading(true); setError("");
+    setLoading(true);
+    setError("");
     try {
       const bountyReads = await discoverFinalBounties();
-      const bounties = bountyReads.flatMap((read) => isRecord(read, ["id", "title", "reward", "status", "submission_count", "approved_submission_id"]) ? [read as unknown as Bounty] : []);
-      const submissions = await Promise.allSettled(bounties.flatMap((bounty) => Array.from({ length: Number(bounty.submission_count) }, (_, index) => ({ bounty, submissionId: index + 1 })).map(async ({ bounty, submissionId }) => {
-        const submission = await readFinalContract("get_submission", [Number(bounty.id), submissionId]);
-        if (!isRecord(submission, ["submission_id", "builder", "status", "verdict_id"])) return null;
-        const typedSubmission = submission as unknown as Submission;
-        let verdict: Verdict | undefined;
-        if (Number(typedSubmission.verdict_id) > 0) {
-          const result = await readFinalContract("get_verdict", [Number(typedSubmission.verdict_id)]);
-          if (isRecord(result, ["approved", "required_criteria_passed", "score", "criteria_report", "reason"])) verdict = result as unknown as Verdict;
-        }
-        return { bounty, submission: typedSubmission, verdict };
-      })));
-      setRecords(submissions.flatMap((read) => read.status === "fulfilled" && read.value ? [read.value] : []).sort((left, right) => Number(right.bounty.id) - Number(left.bounty.id)));
-    } catch { setError("Could not load finalized submissions. Check your connection, then refresh."); } finally { setLoading(false); }
+      const bounties = bountyReads.flatMap((read) =>
+        isRecord(read, [
+          "id",
+          "title",
+          "reward",
+          "status",
+          "submission_count",
+          "approved_submission_id",
+        ])
+          ? [read as unknown as Bounty]
+          : [],
+      );
+      const submissions = await Promise.allSettled(
+        bounties.flatMap((bounty) =>
+          Array.from(
+            { length: Number(bounty.submission_count) },
+            (_, index) => ({ bounty, submissionId: index + 1 }),
+          ).map(async ({ bounty, submissionId }) => {
+            const submission = await readFinalContract("get_submission", [
+              Number(bounty.id),
+              submissionId,
+            ]);
+            if (
+              !isRecord(submission, [
+                "submission_id",
+                "builder",
+                "status",
+                "verdict_id",
+              ])
+            )
+              return null;
+            const typedSubmission = submission as unknown as Submission;
+            let verdict: Verdict | undefined;
+            if (Number(typedSubmission.verdict_id) > 0) {
+              const result = await readFinalContract("get_verdict", [
+                Number(typedSubmission.verdict_id),
+              ]);
+              if (
+                isRecord(result, [
+                  "approved",
+                  "required_criteria_passed",
+                  "score",
+                  "criteria_report",
+                  "reason",
+                ])
+              )
+                verdict = result as unknown as Verdict;
+            }
+            return { bounty, submission: typedSubmission, verdict };
+          }),
+        ),
+      );
+      setRecords(
+        submissions
+          .flatMap((read) =>
+            read.status === "fulfilled" && read.value ? [read.value] : [],
+          )
+          .sort((left, right) => Number(right.bounty.id) - Number(left.bounty.id)),
+      );
+    } catch {
+      setError(
+        "Could not load finalized submissions. Check your connection, then refresh.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { const timer = window.setTimeout(() => void loadRecords(), 0); return () => window.clearTimeout(timer); }, [loadRecords]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadRecords(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadRecords]);
 
   async function adjudicate(record: ReviewRecord) {
     const key = `${record.bounty.id}:${record.submission.submission_id}`;
-    setReviewing(key); setError(""); setTransactionHash("");
+    setActiveKey(key);
+    setReviewing(key);
+    setError("");
+    setActiveTxHash("");
     try {
-      if (!window.ethereum) throw new Error("Install or unlock MetaMask before starting the review.");
+      if (!window.ethereum)
+        throw new Error("Install or unlock MetaMask before starting the review.");
       const accounts = await window.ethereum.request({ method: "eth_accounts" });
-      const address = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : undefined;
+      const address =
+        Array.isArray(accounts) && typeof accounts[0] === "string"
+          ? accounts[0]
+          : undefined;
       if (!address) throw new Error("Connect a wallet from the header first.");
-      const hash = await createProofPayClient(address as `0x${string}`).writeContract({ address: proofPayContractAddress as `0x${string}`, functionName: "adjudicate_submission", args: [Number(record.bounty.id), Number(record.submission.submission_id)], value: BigInt(0) });
-      setTransactionHash(String(hash));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "The intelligent review could not be started."); } finally { setReviewing(""); }
+      const hash = await createProofPayClient(
+        address as `0x${string}`,
+      ).writeContract({
+        address: proofPayContractAddress as `0x${string}`,
+        functionName: "adjudicate_submission",
+        args: [
+          Number(record.bounty.id),
+          Number(record.submission.submission_id),
+        ],
+        value: BigInt(0),
+      });
+      const hashString = String(hash);
+      setActiveTxHash(hashString);
+      saveReviewTx(
+        record.bounty.id,
+        record.submission.submission_id,
+        hashString,
+      );
+      setReviewTxMap(getReviewTxMap());
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The intelligent review could not be started.",
+      );
+    } finally {
+      setReviewing("");
+    }
   }
 
-  return <section id="review" className="scroll-mt-8 py-20 md:py-28"><div className="grid gap-9 md:grid-cols-12"><div className="md:col-span-4"><p className="mono text-[10px] tracking-[.12em] text-[var(--signal)]">INTELLIGENT REVIEW DESK</p><h2 className="mt-4 max-w-sm text-5xl leading-[.9] tracking-[-.06em] sm:text-6xl">Evidence in.<br /><span className="italic">Verdict out.</span></h2><p className="mt-5 max-w-sm leading-6 text-[var(--muted-ink)]">Anyone can start review of a submitted proof. GenLayer validators retrieve the public evidence, assess it against the brief, and settle escrow only when every requirement passes.</p><div className="mt-8 border-l-2 border-[var(--signal)] pl-4"><p className="mono text-[10px] tracking-[.1em] text-[var(--muted-ink)]">LIVE CONSENSUS</p><p className="mt-2 text-sm leading-5">Starting a review creates a fee-bearing consensus transaction. The bounty reward is never sent by this action—it stays protected until an approved verdict.</p></div></div><div className="space-y-4 md:col-span-8"><div className="flex items-center justify-between border-b border-[var(--line)] pb-3"><p className="mono text-[10px] tracking-[.1em] text-[var(--muted-ink)]">FINALIZED SUBMISSION RECORDS</p><button onClick={() => void loadRecords()} className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]">REFRESH</button></div>{loading && <p className="py-8 text-[var(--muted-ink)]">Loading finalized evidence records…</p>}{error && <p className="creator-message creator-message-error">{error}</p>}{!loading && !records.length && !error && <p className="py-8 text-[var(--muted-ink)]">No submissions exist for the configured bounty records.</p>}{records.map((record) => <ReviewCard key={`${record.bounty.id}:${record.submission.submission_id}`} record={record} reviewing={reviewing === `${record.bounty.id}:${record.submission.submission_id}`} onAdjudicate={() => void adjudicate(record)} />)}{transactionHash && <div><p className="mono mt-5 text-[10px] tracking-[.08em] text-[var(--muted-ink)]">REVIEW TRANSACTION {shortHash(transactionHash)}</p><TransactionLifecycle hash={transactionHash} action="Intelligent review" /></div>}</div></div></section>;
+  const filteredRecords = records.filter((record) => {
+    const displayStatus = getDisplayStatus(record, undeterminedMap);
+    const query = search.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      `${record.bounty.title} ${record.submission.summary} ${record.submission.builder} case #${record.bounty.id} evidence #${record.submission.submission_id} ${displayStatus}`
+        .toLowerCase()
+        .includes(query);
+    const matchesStatus =
+      statusFilter === "all" || displayStatus === statusFilter.toLowerCase();
+    return matchesSearch && matchesStatus;
+  });
+
+  return (
+    <section id="review" className="scroll-mt-8 py-20 md:py-28">
+      <div className="grid gap-9 md:grid-cols-12">
+        <div className="md:col-span-4">
+          <p className="mono text-[10px] tracking-[.12em] text-[var(--signal)]">
+            INTELLIGENT REVIEW DESK
+          </p>
+          <h2 className="mt-4 max-w-sm text-5xl leading-[.9] tracking-[-.06em] sm:text-6xl">
+            Evidence in.<br />
+            <span className="italic">Verdict out.</span>
+          </h2>
+          <p className="mt-5 max-w-sm leading-6 text-[var(--muted-ink)]">
+            Anyone can start review of a submitted proof. GenLayer validators retrieve
+            the public evidence, assess it against the brief, and settle escrow only
+            when every requirement passes.
+          </p>
+          <div className="mt-8 border-l-2 border-[var(--signal)] pl-4">
+            <p className="mono text-[10px] tracking-[.1em] text-[var(--muted-ink)]">
+              LIVE CONSENSUS
+            </p>
+            <p className="mt-2 text-sm leading-5">
+              Starting a review creates a fee-bearing consensus transaction. The bounty
+              reward is never sent by this action—it stays protected until an approved
+              verdict.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4 md:col-span-8">
+          <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+            <p className="mono text-[10px] tracking-[.1em] text-[var(--muted-ink)]">
+              FINALIZED SUBMISSION RECORDS
+            </p>
+            <button
+              onClick={() => void loadRecords()}
+              className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]"
+            >
+              REFRESH
+            </button>
+          </div>
+
+          {/* Search and Status Filter */}
+          <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_13rem]">
+            <label className="sr-only" htmlFor="review-search">
+              Search submission records
+            </label>
+            <input
+              id="review-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search titles, summaries, builders, or IDs"
+              className="min-w-0 border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)] focus:border-[var(--signal)]"
+            />
+            <label className="sr-only" htmlFor="review-status">
+              Filter by submission status
+            </label>
+            <select
+              id="review-status"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--signal)]"
+            >
+              <option value="all">All statuses</option>
+              <option value="submitted">Submitted (awaiting review)</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="undetermined">Undetermined</option>
+            </select>
+          </div>
+
+          {loading && (
+            <p className="py-8 text-[var(--muted-ink)]">
+              Loading finalized evidence records…
+            </p>
+          )}
+          {error && <p className="creator-message creator-message-error">{error}</p>}
+          {!loading && !records.length && !error && (
+            <p className="py-8 text-[var(--muted-ink)]">
+              No submissions exist for the configured bounty records.
+            </p>
+          )}
+          {!loading && records.length > 0 && filteredRecords.length === 0 && (
+            <p className="py-8 text-[var(--muted-ink)]">
+              No matching submission records found. Try another search or status filter.
+            </p>
+          )}
+
+          {filteredRecords.map((record) => {
+            const recordKey = `${record.bounty.id}:${record.submission.submission_id}`;
+            const isThisActive = activeKey === recordKey && Boolean(activeTxHash);
+            const undeterminedInfo = undeterminedMap[recordKey];
+            const reviewTx = reviewTxMap[recordKey] || undeterminedInfo?.txHash;
+
+            return (
+              <div key={recordKey} className="space-y-3">
+                <ReviewCard
+                  record={record}
+                  reviewing={reviewing === recordKey}
+                  undeterminedInfo={undeterminedInfo}
+                  reviewTxHash={reviewTx}
+                  copiedHash={copiedHash}
+                  onCopyHash={copyTxHash}
+                  onAdjudicate={() => void adjudicate(record)}
+                />
+
+                {/* Inline Live Consensus Tracker directly under the card being reviewed */}
+                {isThisActive && (
+                  <div className="rounded-xl border-l-4 border-[var(--signal)] bg-[var(--paper)] p-4 shadow-[3px_3px_0_var(--line)]">
+                    <p className="mono text-[10px] tracking-[.08em] text-[var(--signal)]">
+                      LIVE CONSENSUS REVIEW · CASE #{record.bounty.id} · EVIDENCE #{record.submission.submission_id}
+                    </p>
+                    <TransactionLifecycle
+                      hash={activeTxHash}
+                      action="Intelligent review"
+                      reviewContext={{
+                        bountyId: record.bounty.id,
+                        submissionId: record.submission.submission_id,
+                        bountyReward: record.bounty.reward,
+                      }}
+                      onStatusChange={(status) => {
+                        if (status.done) {
+                          if (status.failed) {
+                            markUndeterminedReview(
+                              record.bounty.id,
+                              record.submission.submission_id,
+                              status.errorReason ||
+                                "Evidence could not be retrieved by GenLayer validators (HTTP error or unreachable URL).",
+                              activeTxHash,
+                            );
+                            setUndeterminedMap(getUndeterminedReviews());
+                          }
+                          // Refresh records so the card immediately displays the finalized verdict
+                          void loadRecords();
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
 }
 
-function ReviewCard({ record, reviewing, onAdjudicate }: { record: ReviewRecord; reviewing: boolean; onAdjudicate: () => void }) {
+function ReviewCard({
+  record,
+  reviewing,
+  undeterminedInfo,
+  reviewTxHash,
+  copiedHash,
+  onCopyHash,
+  onAdjudicate,
+}: {
+  record: ReviewRecord;
+  reviewing: boolean;
+  undeterminedInfo?: UndeterminedInfo;
+  reviewTxHash?: string;
+  copiedHash?: string;
+  onCopyHash: (hash: string) => void;
+  onAdjudicate: () => void;
+}) {
   const { bounty, submission, verdict } = record;
-  const submitted = submission.status === "submitted";
-  const approved = submission.status === "approved";
-  return <article className={`review-card ${approved ? "review-approved" : submission.status === "rejected" ? "review-rejected" : ""}`}><div className="flex flex-wrap items-center justify-between gap-3"><p className="mono text-[10px] tracking-[.1em]">CASE #{bounty.id} · EVIDENCE #{submission.submission_id}</p><span className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em]">{submission.status.toUpperCase()}</span></div><h3 className="mt-4 text-3xl leading-[.95] tracking-[-.05em]">{bounty.title}</h3><div className="mt-5 grid gap-3 border-y border-[var(--line)] py-4 sm:grid-cols-3"><Metric label="ESCROW" value={`${formatGen(bounty.reward)} GEN`} /><Metric label="BUILDER" value={shortAddress(submission.builder)} /><Metric label="SCORE" value={verdict ? `${verdict.score}/100` : "Awaiting review"} /></div><p className="mt-5 text-sm leading-6 text-[var(--muted-ink)]">{submission.summary}</p><div className="mt-4 flex flex-wrap gap-3"><a href={submission.repository_url} target="_blank" rel="noreferrer" className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4">VIEW REPOSITORY ↗</a><a href={submission.deployment_url} target="_blank" rel="noreferrer" className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4">VIEW DEPLOYMENT ↗</a></div>{verdict && <div className={`verdict-card ${verdict.approved ? "verdict-approved" : "verdict-rejected"}`}><p className="mono text-[10px] tracking-[.1em]">{verdict.approved ? "APPROVED · REWARD SETTLED" : "NOT APPROVED · ESCROW REMAINS OPEN"}</p><p className="mt-3 text-sm leading-6">{verdict.reason}</p><p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">{verdict.criteria_report}</p></div>}{submitted && <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-5"><p className="max-w-sm text-sm leading-5 text-[var(--muted-ink)]">This starts GenLayer’s public-evidence evaluation. It may use fee balance and can take several consensus phases.</p><button onClick={onAdjudicate} disabled={reviewing} className="rounded-full bg-[var(--signal)] px-5 py-3 text-sm text-white shadow-[3px_3px_0_var(--ink)] transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60">{reviewing ? "Opening wallet…" : "Start intelligent review"}</button></div>}</article>;
+  const isApproved = submission.status === "approved";
+  const isRejected = submission.status === "rejected";
+  const isUndetermined = !isApproved && !isRejected && Boolean(undeterminedInfo);
+  const isSubmitted = !isApproved && !isRejected && !isUndetermined;
+
+  return (
+    <article
+      className={`review-card ${
+        isApproved
+          ? "review-approved"
+          : isRejected
+            ? "review-rejected"
+            : isUndetermined
+              ? "border-[#e09138]/60 bg-[var(--card)]"
+              : ""
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="mono text-[10px] tracking-[.1em]">
+          CASE #{bounty.id} · EVIDENCE #{submission.submission_id}
+        </p>
+        <span
+          className={`mono rounded-full px-3 py-1 text-[10px] tracking-[0.08em] ${
+            isApproved
+              ? "bg-[color-mix(in_srgb,var(--verdict)_70%,var(--paper))] text-[var(--ink)]"
+              : isRejected
+                ? "bg-[color-mix(in_srgb,#db6b5e_14%,var(--paper))] text-[#b95046]"
+                : isUndetermined
+                  ? "bg-[#e09138]/20 font-medium text-[#c27623]"
+                  : "border border-[var(--line)]"
+          }`}
+        >
+          {isUndetermined ? "UNDETERMINED" : submission.status.toUpperCase()}
+        </span>
+      </div>
+      <h3 className="mt-4 text-3xl leading-[.95] tracking-[-.05em]">
+        {bounty.title}
+      </h3>
+      <div className="mt-5 grid gap-3 border-y border-[var(--line)] py-4 sm:grid-cols-3">
+        <Metric label="ESCROW" value={`${formatGen(bounty.reward)} GEN`} />
+        <Metric label="BUILDER" value={shortAddress(submission.builder)} />
+        <Metric
+          label="SCORE"
+          value={
+            verdict
+              ? `${verdict.score}/100`
+              : isUndetermined
+                ? "Undetermined"
+                : "Awaiting review"
+          }
+        />
+      </div>
+      <p className="mt-5 text-sm leading-6 text-[var(--muted-ink)]">
+        {submission.summary}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-3">
+        <a
+          href={submission.repository_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4"
+        >
+          VIEW REPOSITORY ↗
+        </a>
+        <a
+          href={submission.deployment_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4"
+        >
+          VIEW DEPLOYMENT ↗
+        </a>
+        <Link
+          href={`/reviews/${bounty.id}/${submission.submission_id}`}
+          className="mono text-[10px] tracking-[.08em] underline decoration-[var(--signal)] underline-offset-4"
+        >
+          VIEW FULL REVIEW →
+        </Link>
+      </div>
+
+      {/* Undetermined callout */}
+      {isUndetermined && undeterminedInfo && (
+        <div className="mt-4 rounded-lg border-l-2 border-[#e09138] bg-[#e09138]/10 p-3">
+          <p className="mono text-[10px] tracking-[.1em] text-[#c27623]">
+            REVIEW UNDETERMINED · EVIDENCE UNREACHABLE
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--ink)]">
+            {undeterminedInfo.reason}
+          </p>
+          <p className="mt-2 text-[11px] leading-4 text-[var(--muted-ink)]">
+            Validators could not fetch the evidence URL from the network. Escrow remains safely locked and open for other submissions with working links.
+          </p>
+        </div>
+      )}
+
+      {verdict && (
+        <div
+          className={`verdict-card ${
+            verdict.approved ? "verdict-approved" : "verdict-rejected"
+          }`}
+        >
+          <p className="mono text-[10px] tracking-[.1em]">
+            {verdict.approved
+              ? "APPROVED · REWARD SETTLED"
+              : "NOT APPROVED · ESCROW REMAINS OPEN"}
+          </p>
+          <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
+          <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">
+            {verdict.criteria_report}
+          </p>
+        </div>
+      )}
+
+      {/* Review Transaction ID & Explorer link on reviewed / undetermined cards */}
+      {reviewTxHash && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-3 text-xs text-[var(--muted-ink)]">
+          <div className="flex items-center gap-2">
+            <span className="mono text-[10px] tracking-[.08em] text-[var(--muted-ink)]">
+              REVIEW TX:
+            </span>
+            <span className="mono font-mono text-[11px] text-[var(--ink)]">
+              {shortHash(reviewTxHash)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onCopyHash(reviewTxHash)}
+              className="mono text-[10px] tracking-[.08em] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
+            >
+              {copiedHash === reviewTxHash
+                ? "COPIED TRANSACTION ID"
+                : "COPY TRANSACTION ID"}
+            </button>
+            <a
+              href={genLayerTransactionUrl(reviewTxHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="mono text-[10px] tracking-[.08em] text-[var(--signal)] underline decoration-[var(--signal)] underline-offset-4"
+            >
+              VIEW ON EXPLORER ↗
+            </a>
+          </div>
+        </div>
+      )}
+
+      {(isSubmitted || isUndetermined) && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-5">
+          <p className="max-w-sm text-sm leading-5 text-[var(--muted-ink)]">
+            {isUndetermined
+              ? "You may retry review if the external link has been restored."
+              : "This starts GenLayer’s public-evidence evaluation. It may use fee balance and can take several consensus phases."}
+          </p>
+          <button
+            onClick={onAdjudicate}
+            disabled={reviewing}
+            className={`rounded-full px-5 py-3 text-sm text-white shadow-[3px_3px_0_var(--ink)] transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60 ${
+              isUndetermined
+                ? "bg-[#c27623] hover:bg-[#a5621a]"
+                : "bg-[var(--signal)]"
+            }`}
+          >
+            {reviewing
+              ? "Opening wallet…"
+              : isUndetermined
+                ? "Retry review"
+                : "Start intelligent review"}
+          </button>
+        </div>
+      )}
+    </article>
+  );
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <div><p className="mono text-[9px] tracking-[.1em] text-[var(--muted-ink)]">{label}</p><p className="mt-1 text-sm">{value}</p></div>; }
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="mono text-[9px] tracking-[.1em] text-[var(--muted-ink)]">
+        {label}
+      </p>
+      <p className="mt-1 text-sm">{value}</p>
+    </div>
+  );
+}
