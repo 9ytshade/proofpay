@@ -7,6 +7,7 @@ import {
   isHttpsUrl,
   isPublicGithubCommitUrl,
   normalizeHttpsUrl,
+  parseCriteriaResults,
   parseGenToWei,
   validateEvidencePaths,
 } from "./safety";
@@ -99,4 +100,15 @@ describe("ProofPay client safety rules", () => {
     const hash = "0x208ce686ed1a39c7b2d765d3a23d134643294d69daf3d0276411840c9cd901e9";
     expect(genLayerTransactionUrl(hash)).toBe(`https://explorer-studio.genlayer.com/tx/${hash}`);
   });
+
+  it("parses criteria_results safely from pipe-separated strings or arrays", () => {
+    expect(parseCriteriaResults("PASS|PASS|PASS")).toEqual(["PASS", "PASS", "PASS"]);
+    expect(parseCriteriaResults("PASS|FAIL|UNDETERMINED")).toEqual(["PASS", "FAIL", "UNDETERMINED"]);
+    expect(parseCriteriaResults("PASS\nFAIL")).toEqual(["PASS", "FAIL"]);
+    expect(parseCriteriaResults(["PASS", "PASS"])).toEqual(["PASS", "PASS"]);
+    expect(parseCriteriaResults("")).toEqual([]);
+    expect(parseCriteriaResults(null)).toEqual([]);
+    expect(parseCriteriaResults(undefined)).toEqual([]);
+  });
 });
+

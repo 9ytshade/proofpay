@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { formatGen, readFinalContract, shortAddress } from "@/lib/genlayer";
+import { parseCriteriaResults } from "@/lib/safety";
 
 type Bounty = {
   id: number | string;
@@ -45,7 +46,7 @@ type Verdict = {
   required_criteria_passed: boolean;
   outcome?: string;
   score: number | string;
-  criteria_results?: string[];
+  criteria_results?: string[] | string;
   criteria_report: string;
   reason: string;
   evidence_note?: string;
@@ -290,24 +291,27 @@ export function BountyRecord() {
                             <p className="mono text-[10px]">SCORE {verdict.score}/100</p>
                           </div>
                           <p className="mt-3 text-sm leading-6">{verdict.reason}</p>
-                          {verdict.criteria_results && verdict.criteria_results.length > 0 && (
-                            <div className="mt-3 border-t border-current/15 pt-3">
-                              <p className="mono text-[9px] tracking-[.08em] mb-2 font-medium">CRITERIA CONSENSUS RESULTS:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {verdict.criteria_results.map((res, idx) => (
-                                  <span key={idx} className={`mono rounded px-2 py-0.5 text-[9px] font-bold ${
-                                    res === "PASS"
-                                      ? "bg-green-700/20 text-green-800"
-                                      : res === "FAIL"
-                                        ? "bg-red-700/20 text-red-800"
-                                        : "bg-amber-700/20 text-amber-800"
-                                  }`}>
-                                    C{idx + 1}: {res}
-                                  </span>
-                                ))}
+                          {(() => {
+                            const criteriaList = parseCriteriaResults(verdict.criteria_results);
+                            return criteriaList.length > 0 ? (
+                              <div className="mt-3 border-t border-current/15 pt-3">
+                                <p className="mono text-[9px] tracking-[.08em] mb-2 font-medium">CRITERIA CONSENSUS RESULTS:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {criteriaList.map((res, idx) => (
+                                    <span key={idx} className={`mono rounded px-2 py-0.5 text-[9px] font-bold ${
+                                      res === "PASS"
+                                        ? "bg-green-700/20 text-green-800"
+                                        : res === "FAIL"
+                                          ? "bg-red-700/20 text-red-800"
+                                          : "bg-amber-700/20 text-amber-800"
+                                    }`}>
+                                      C{idx + 1}: {res}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            ) : null;
+                          })()}
                           <p className="mt-3 border-t border-current/15 pt-3 text-sm leading-6 opacity-80">{verdict.criteria_report}</p>
                         </div>
                       ) : (

@@ -184,3 +184,24 @@ export function saveReviewTx(
     // Ignore storage errors
   }
 }
+
+export function parseCriteriaResults(results?: string[] | string | null): string[] {
+  if (!results) return [];
+  if (Array.isArray(results)) return results;
+  if (typeof results === "string") {
+    const trimmed = results.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes("|")) {
+      return trimmed.split("|").map((s) => s.trim()).filter(Boolean);
+    }
+    if (trimmed.includes("\n")) {
+      return trimmed.split("\n").map((s) => s.trim()).filter(Boolean);
+    }
+    if (trimmed.includes(",")) {
+      return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
