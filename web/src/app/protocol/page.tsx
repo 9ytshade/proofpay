@@ -7,6 +7,7 @@ const sections = [
   ["protections", "Contract protections"],
   ["scope", "MVP scope"],
   ["network", "Network & risk"],
+  ["undetermined", "Undetermined reviews"],
 ] as const;
 
 export default function ProtocolPage() {
@@ -97,6 +98,11 @@ export default function ProtocolPage() {
                 <p className="mt-4 leading-6 text-[var(--muted-ink)]">This site is not a mainnet or production financial service. Network transaction costs, if any, are separate from the bounty reward. The project’s production-readiness checklist still requires compatible fee-profile generation and review, fee estimates for each write, and a complete end-to-end smoke test on the intended network.</p>
                 <a className="mono mt-6 inline-block text-[10px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4" href="https://explorer-studio.genlayer.com" target="_blank" rel="noreferrer">OPEN STUDIONET EXPLORER ↗</a>
               </div>
+            </section>
+
+            <section id="undetermined" className="scroll-mt-8">
+              <SectionHeading number="07" title="Undetermined reviews" />
+              <p className="max-w-3xl text-lg leading-7 text-[var(--muted-ink)]">If an evidence URL is unreachable or returns HTTP errors during adjudication, the transaction may revert. When a review is undetermined, the submission remains immutable on-chain, and the frontend tracks these as &apos;undetermined&apos; locally. Users can retry the review when the evidence becomes available again.</p>
             </section>
 
             <div className="border-t border-[var(--line)] pt-8">

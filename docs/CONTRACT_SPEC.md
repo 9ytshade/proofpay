@@ -57,3 +57,15 @@ other state-changing actions. The reward transfer is scheduled only through
 the GenLayer-supported finality-safe mechanism. A failed or undetermined
 adjudication must leave the reward locked and give no account a payout.
 
+## Undetermined adjudication
+
+An adjudication may revert if submitted evidence is unreachable (HTTP 4xx/5xx),
+malformed, or otherwise unresolvable by validators. In this case:
+
+- The transaction reaches `FINALIZED` status with `MAJORITY_AGREE` consensus.
+- The leader receipt records `execution_result: "ERROR"` with a rollback payload.
+- No on-chain state change occurs; the submission remains `submitted`.
+- The bounty stays `open` and the reward remains escrowed.
+- The frontend tracks these as "undetermined" reviews in local storage.
+- The review can be retried once the evidence URL is corrected or made accessible.
+

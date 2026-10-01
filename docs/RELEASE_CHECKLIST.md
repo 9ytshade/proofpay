@@ -36,6 +36,10 @@ Use two separate wallets and a deliberately small test reward.
 4. Refresh the review desk and confirm the verdict, score, report, and reason.
 5. For an approval, confirm the bounty is `awarded` and the selected builder
    received the reward. For a rejection, confirm the bounty is still `open`.
+6. Test the undetermined review flow by submitting with an unreachable URL.
+7. Verify that the review transaction hash appears on cards after review.
+8. Verify that the filter categories work (All, Submitted, Approved, Rejected, Undetermined).
+9. Check that the outcome modal shows the correct status (approved with score, rejected with reason, reverted with error).
 
 Never retry a write solely because the UI or browser timed out. First paste its
 transaction ID into ProofPay's lifecycle tracker and confirm its final status.
