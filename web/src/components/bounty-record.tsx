@@ -3,8 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { formatGen, readFinalContract, shortAddress } from "@/lib/genlayer";
+import {
+  createProofPayClient,
+  formatGen,
+  proofPayContractAddress,
+  readFinalContract,
+  shortAddress,
+} from "@/lib/genlayer";
 import { parseCriteriaResults } from "@/lib/safety";
+import { TransactionLifecycle } from "@/components/transaction-lifecycle";
 
 type Bounty = {
   id: number | string;
@@ -73,12 +80,16 @@ function parseCriteria(value: string) {
 function deadlineLabel(value: number | string) {
   const timestamp = Number(value);
   if (!Number.isFinite(timestamp)) return "Deadline unavailable";
-  return new Date(timestamp * 1000).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }) + " UTC";
+  return (
+    new Date(timestamp * 1000).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }) + " UTC"
+  );
 }
+
+const REVIEW_WINDOW_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export function BountyRecord() {
   const { id: rawId } = useParams<{ id: string }>();
@@ -87,6 +98,28 @@ export function BountyRecord() {
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [currentTime, setCurrentTime] = useState(0);
+  const [connectedAccount, setConnectedAccount] = useState<string>("");
+  const [actionState, setActionState] = useState<"idle" | "submitting" | "done" | "error">("idle");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionTxHash, setActionTxHash] = useState("");
+  const [actionType, setActionType] = useState<"cancel" | "refund">("cancel");
+
+  // Check connected account
+  useEffect(() => {
+    async function checkAccount() {
+      if (typeof window !== "undefined" && window.ethereum) {
+        try {
+          const accounts = await window.ethereum.request({ method: "eth_accounts" }) as string[];
+          if (Array.isArray(accounts) && accounts[0]) {
+            setConnectedAccount(accounts[0].toLowerCase());
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    void checkAccount();
+  }, []);
 
   const loadRecord = useCallback(async () => {
     if (!Number.isSafeInteger(bountyId) || bountyId <= 0) {
@@ -155,6 +188,66 @@ export function BountyRecord() {
     return () => window.clearTimeout(timer);
   }, [loadRecord]);
 
+  async function handleCancelBounty() {
+    if (!bounty) return;
+    setActionState("submitting");
+    setActionMessage("");
+    setActionTxHash("");
+    setActionType("cancel");
+    try {
+      if (!window.ethereum) throw new Error("MetaMask is required to sign this transaction.");
+      const accounts = await window.ethereum.request({ method: "eth_accounts" }) as string[];
+      const address = accounts?.[0];
+      if (!address) throw new Error("Connect your client wallet first.");
+      if (address.toLowerCase() !== bounty.client.toLowerCase()) {
+        throw new Error("Only the bounty client address can cancel this bounty.");
+      }
+      const client = createProofPayClient(address as `0x${string}`);
+      const hash = await client.writeContract({
+        address: proofPayContractAddress as `0x${string}`,
+        functionName: "cancel_bounty",
+        args: [Number(bounty.id)],
+        value: BigInt(0),
+      });
+      setActionTxHash(String(hash));
+      setActionState("done");
+      setActionMessage("Cancellation submitted to GenLayer. Escrow is refunded upon finality.");
+    } catch (err) {
+      setActionState("error");
+      setActionMessage(err instanceof Error ? err.message : "Cancellation failed.");
+    }
+  }
+
+  async function handleRefundExpiredBounty() {
+    if (!bounty) return;
+    setActionState("submitting");
+    setActionMessage("");
+    setActionTxHash("");
+    setActionType("refund");
+    try {
+      if (!window.ethereum) throw new Error("MetaMask is required to sign this transaction.");
+      const accounts = await window.ethereum.request({ method: "eth_accounts" }) as string[];
+      const address = accounts?.[0];
+      if (!address) throw new Error("Connect your client wallet first.");
+      if (address.toLowerCase() !== bounty.client.toLowerCase()) {
+        throw new Error("Only the bounty client address can claim an expired refund.");
+      }
+      const client = createProofPayClient(address as `0x${string}`);
+      const hash = await client.writeContract({
+        address: proofPayContractAddress as `0x${string}`,
+        functionName: "refund_expired_bounty",
+        args: [Number(bounty.id)],
+        value: BigInt(0),
+      });
+      setActionTxHash(String(hash));
+      setActionState("done");
+      setActionMessage("Refund request submitted to GenLayer. Escrow is refunded upon finality.");
+    } catch (err) {
+      setActionState("error");
+      setActionMessage(err instanceof Error ? err.message : "Refund request failed.");
+    }
+  }
+
   if (state === "loading") {
     return <div className="py-16 text-[var(--muted-ink)]" role="status">Loading finalized bounty record…</div>;
   }
@@ -171,11 +264,17 @@ export function BountyRecord() {
 
   const criteria = parseCriteria(bounty.criteria);
   const status = bounty.status.toLowerCase();
-  const deadlinePassed = currentTime > 0 && Number(bounty.deadline) * 1000 <= currentTime;
+  const deadlineTimestamp = Number(bounty.deadline);
+  const deadlinePassed = currentTime > 0 && deadlineTimestamp * 1000 <= currentTime;
+  const reviewWindowPassed = currentTime > 0 && (deadlineTimestamp + REVIEW_WINDOW_SECONDS) * 1000 <= currentTime;
   const approvedSubmissionId = Number(bounty.approved_submission_id);
   const winner = submissions.find(({ submission }) => Number(submission.submission_id) === approvedSubmissionId);
   const canSubmit = status === "open" && !deadlinePassed;
   const hasSubmitted = submissions.some(({ submission }) => submission.status === "submitted");
+  const isClient = connectedAccount.length > 0 && connectedAccount === bounty.client.toLowerCase();
+  const submissionCount = Number(bounty.submission_count);
+  const canCancel = isClient && status === "open" && submissionCount === 0;
+  const canRefundExpired = isClient && status === "open" && reviewWindowPassed && !winner;
 
   return (
     <div>
@@ -325,7 +424,7 @@ export function BountyRecord() {
           </section>
         </div>
 
-        <aside className="md:col-span-5">
+        <aside className="md:col-span-5 space-y-8">
           <div className="border-t border-[var(--line)] pt-5">
             <SectionLabel>CASE STATE</SectionLabel>
             {status === "awarded" && <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">This bounty is settled. No further submissions or reviews can change its outcome.</p>}
@@ -335,10 +434,102 @@ export function BountyRecord() {
             {status === "open" && !deadlinePassed && !hasSubmitted && <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">This bounty is accepting public evidence until the deadline.</p>}
             {status === "open" && !deadlinePassed && hasSubmitted && <p className="mt-3 text-sm leading-6 text-[var(--muted-ink)]">This bounty remains open. Submitted evidence can be reviewed; other builders may also submit before the deadline.</p>}
 
-            {canSubmit && <Link href={`/bounties/${bounty.id}/submit`} className="mt-5 inline-flex rounded-full bg-[var(--signal)] px-5 py-3 text-sm text-white shadow-[4px_4px_0_var(--ink)] transition hover:-translate-y-0.5 hover:bg-[var(--signal-dark)]">Submit proof</Link>}
-            {status === "open" && hasSubmitted && <Link href="/reviews" className="mono mt-5 block text-[10px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4">OPEN REVIEW DESK →</Link>}
+            {/* Actions for Builder */}
+            {canSubmit && (
+              <Link href={`/bounties/${bounty.id}/submit`} className="mt-5 inline-flex rounded-full bg-[var(--signal)] px-5 py-3 text-sm text-white shadow-[4px_4px_0_var(--ink)] transition hover:-translate-y-0.5 hover:bg-[var(--signal-dark)]">
+                Submit proof
+              </Link>
+            )}
+
+            {/* Client Cancellation Action */}
+            {canCancel && (
+              <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4">
+                <p className="mono text-[10px] tracking-[.1em] text-[var(--signal)]">CLIENT ACTION · ZERO SUBMISSIONS</p>
+                <p className="mt-2 text-xs leading-5 text-[var(--muted-ink)]">As the client, you can cancel this bounty and receive a 100% refund of the {formatGen(bounty.reward)} GEN escrow because no submissions have been recorded.</p>
+                <button
+                  type="button"
+                  disabled={actionState === "submitting"}
+                  onClick={() => void handleCancelBounty()}
+                  className="mt-4 rounded-full border border-[#db6b5e] bg-[#db6b5e]/10 px-4 py-2 text-xs font-medium text-[#b95046] transition hover:bg-[#db6b5e]/20 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {actionState === "submitting" ? "Awaiting wallet…" : "Cancel bounty & claim refund"}
+                </button>
+              </div>
+            )}
+
+            {/* Client Expired Refund Action */}
+            {canRefundExpired && (
+              <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4">
+                <p className="mono text-[10px] tracking-[.1em] text-[var(--signal)]">CLIENT ACTION · EXPIRED REVIEW WINDOW</p>
+                <p className="mt-2 text-xs leading-5 text-[var(--muted-ink)]">The 7-day review window after the deadline has expired without an awarded submission. You can reclaim your {formatGen(bounty.reward)} GEN escrow.</p>
+                <button
+                  type="button"
+                  disabled={actionState === "submitting"}
+                  onClick={() => void handleRefundExpiredBounty()}
+                  className="mt-4 rounded-full border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-xs font-medium text-[var(--paper)] transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {actionState === "submitting" ? "Awaiting wallet…" : "Claim expired bounty refund"}
+                </button>
+              </div>
+            )}
+
+            {actionMessage && (
+              <p className={`mono mt-3 text-[10px] tracking-[.06em] ${actionState === "error" ? "text-red-600" : "text-[var(--signal)]"}`} role="status">
+                {actionMessage}
+              </p>
+            )}
+
+            {actionTxHash && (
+              <div className="mt-4">
+                <TransactionLifecycle
+                  hash={actionTxHash}
+                  action={actionType === "cancel" ? "Bounty cancellation" : "Expired refund claim"}
+                  onDismiss={() => {
+                    setActionTxHash("");
+                    void loadRecord();
+                  }}
+                  onStatusChange={(res) => {
+                    if (res.done && !res.failed) {
+                      void loadRecord();
+                    }
+                  }}
+                />
+              </div>
+            )}
+
+            {status === "open" && hasSubmitted && (
+              <Link href="/reviews" className="mono mt-5 block text-[10px] tracking-[0.08em] text-[var(--signal)] underline underline-offset-4">
+                OPEN REVIEW DESK →
+              </Link>
+            )}
             <p className="mono mt-6 border-t border-[var(--line)] pt-4 text-[9px] leading-5 tracking-[0.04em] text-[var(--muted-ink)]">READ FROM FINALIZED STUDIONET STATE · CHAIN 61999</p>
-            <p className="mt-2 text-xs leading-5 text-[var(--muted-ink)]">The current contract does not store transaction hashes, so this record does not invent transaction links.</p>
+          </div>
+
+          {/* Financial Outcome Rules Disclosure (Item 24) */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-5">
+            <SectionLabel>FINANCIAL OUTCOME RULES</SectionLabel>
+            <ul className="mt-3 space-y-3 text-xs leading-5 text-[var(--muted-ink)]">
+              <li className="flex items-start gap-2">
+                <span className="mono text-[10px] font-bold text-green-700">APPROVED:</span>
+                <span>100% criteria pass validator consensus. Escrow reward transfers directly to builder address.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mono text-[10px] font-bold text-red-700">REJECTED:</span>
+                <span>One or more criteria fail. Escrow remains safely in contract; other builders can submit.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mono text-[10px] font-bold text-amber-700">UNDETERMINED:</span>
+                <span>External evidence temporary timeout/429. Submission remains pending and can be retried.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mono text-[10px] font-bold text-[var(--ink)]">CANCELLED:</span>
+                <span>Client cancels an open case with 0 submissions. 100% of escrow is refunded immediately.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mono text-[10px] font-bold text-[var(--ink)]">REFUNDED:</span>
+                <span>Deadline + 7-day review window expires with no award. Client reclaims 100% of escrow.</span>
+              </li>
+            </ul>
           </div>
         </aside>
       </div>
