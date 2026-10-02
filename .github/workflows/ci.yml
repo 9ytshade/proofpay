@@ -11,6 +11,9 @@ env:
   NODE_VERSION: "24"
   GENVM_VERSION: "v0.2.12"
 
+permissions:
+  contents: read
+
 jobs:
   contract-checks:
     name: Contract linter and Direct Mode tests
@@ -97,6 +100,9 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint
+
+      - name: Dependency vulnerability audit
+        run: npm audit --omit=dev
 
       - name: Production build
         run: npm run build
