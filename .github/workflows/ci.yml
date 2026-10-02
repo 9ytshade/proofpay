@@ -33,24 +33,31 @@ jobs:
         id: cache-genvm
         uses: actions/cache@v4
         with:
-          path: ~/.cache/genvm-linter
+          path: |
+            ~/.cache/genvm-linter
+            ~/.cache/gltest-direct
           key: genvm-${{ env.GENVM_VERSION }}
 
       - name: Download and extract GenVM standard library
         if: steps.cache-genvm.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.cache/genvm-linter/genvmroot
+          mkdir -p ~/.cache/gltest-direct
           mkdir -p /tmp/genvm-extracted
           curl -fsSL "https://github.com/genlayerlabs/genvm/releases/download/${{ env.GENVM_VERSION }}/genvm-universal.tar.xz" \
             -o /tmp/genvm.tar.xz
           tar -xf /tmp/genvm.tar.xz -C /tmp/genvm-extracted
           cp -r /tmp/genvm-extracted/runners ~/.cache/genvm-linter/genvmroot/runners
-          # Also populate cached tarballs so genvm-lint validate offline-resolves regardless of release redirect
+          # Populate cached tarballs for genvm-linter
           cp /tmp/genvm.tar.xz ~/.cache/genvm-linter/genvm-universal.tar.xz
           cp /tmp/genvm.tar.xz ~/.cache/genvm-linter/genvm-universal-${{ env.GENVM_VERSION }}.tar.xz
+          # Populate cached tarballs for gltest-direct
+          cp /tmp/genvm.tar.xz ~/.cache/gltest-direct/genvm-universal.tar.xz
+          cp /tmp/genvm.tar.xz ~/.cache/gltest-direct/genvm-universal-${{ env.GENVM_VERSION }}.tar.xz
           latest_tag=$(curl -s "https://api.github.com/repos/genlayerlabs/genvm/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
           if [ -n "$latest_tag" ]; then
             cp /tmp/genvm.tar.xz ~/.cache/genvm-linter/genvm-universal-${latest_tag}.tar.xz
+            cp /tmp/genvm.tar.xz ~/.cache/gltest-direct/genvm-universal-${latest_tag}.tar.xz
           fi
           rm -rf /tmp/genvm.tar.xz /tmp/genvm-extracted
 
