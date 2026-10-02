@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `main` |
 | Repository | https://github.com/9ytshade/proofpay |
-| CI Run | [37039366221](https://github.com/9ytshade/proofpay/actions/runs/37039366221) (Status: **SUCCESS / GREEN**) |
+| CI Run | [37042661975](https://github.com/9ytshade/proofpay/actions/runs/37042661975) (Status: **SUCCESS / GREEN**) |
 | Contract Job | `✓ Contract linter and Direct Mode tests in 3m16s (ID 110945388453)` |
 | Frontend Job | `✓ Frontend tests, lint, and build in 35s (ID 110945388759)` |
 
