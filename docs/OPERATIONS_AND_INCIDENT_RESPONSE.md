@@ -4,7 +4,7 @@ This document defines production operational standards, RPC health monitoring, s
 
 ---
 
-## 1. RPC Health Monitoring Architecture (Item 32)
+## 1. RPC Health Monitoring Architecture
 
 ### 1.1 Overview & Endpoint Topology
 ProofPay interacts with the GenLayer consensus network via JSON-RPC. Reliable dApp operation requires continuous health verification of the RPC endpoints and GenVM execution layer.
@@ -37,7 +37,7 @@ Production monitoring agents (Datadog, Grafana, or Uptime Kuma) should poll the 
 
 ---
 
-## 2. Client-Side Error Logging & Observability (Item 33)
+## 2. Client-Side Error Logging & Observability
 
 ### 2.1 Error Categorization Matrix
 All frontend runtime errors in `web/` are categorized into distinct operational classes:
@@ -72,7 +72,7 @@ When integrating third-party crash reporting (e.g., Sentry, Bugsnag):
 
 ---
 
-## 3. Incident Response Runbook (Item 34)
+## 3. Incident Response Runbook
 
 ### 3.1 Severity Classifications
 - **SEV-1 (Critical):** Consensus failure, zero-day in GenVM execution, contract funds locked or at risk.
@@ -116,7 +116,7 @@ When integrating third-party crash reporting (e.g., Sentry, Bugsnag):
 
 ---
 
-## 4. Smart Contract Migration & Rollback Strategy (Item 35)
+## 4. Smart Contract Migration & Rollback Strategy
 
 ### 4.1 Non-Upgradeability Architecture
 ProofPay intelligent contracts are deliberately deployed as **immutable, non-upgradeable autonomous programs**:
@@ -156,7 +156,7 @@ sequenceDiagram
 
 ---
 
-## 5. Regulatory & Financial Disclosures (Item 39)
+## 5. Regulatory & Financial Disclosures
 
 ### 5.1 Testnet / Studionet Token Notice
 - **No Economic Value:** All transactions executed on GenLayer Studionet (`chain_id=61999`) or GenLayer Testnet utilize test tokens (GEN). These tokens are issued solely for experimental software testing and developer validation. They have **no fiat value, no investment utility, and cannot be redeemed for legal tender**.

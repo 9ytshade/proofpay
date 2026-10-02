@@ -116,9 +116,9 @@ transaction ID into the lifecycle tracker and confirm its final status.
 - Legacy contract address `0xa1c53F5afFF44136d63dDF02dFDfA0ecEcFF32b7` is
   referenced as historical only.
 
-## 9. 39 Production-Ready Requirements Verification Matrix
+## 9. Production-Ready Requirements Verification Matrix
 
-| # | Requirement Area | Status | Deliverable / Verification Link |
+| No. | Requirement Area | Status | Deliverable / Verification Link |
 | --- | --- | --- | --- |
 | 1 | Single-test per behavior & Direct Mode separation | **VERIFIED** | [`test_proofpay.py`](file:///tests/direct/test_proofpay.py), [`test_adversarial.py`](file:///tests/direct/test_adversarial.py) (68 unit/adversarial tests) |
 | 2 | Contract boundary value fuzzing / property tests | **VERIFIED** | [`test_proofpay.py`](file:///tests/direct/test_proofpay.py#L1228) (title 5..120, brief 20..2000, criteria 1..10, 10..200) |

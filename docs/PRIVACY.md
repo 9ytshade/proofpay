@@ -1,4 +1,4 @@
-# ProofPay Privacy Statement & Ledger Transparency (Item 38)
+# ProofPay Privacy Statement & Ledger Transparency
 
 **Last Updated:** October 2, 2026  
 **Protocol Version:** 2.0.0
@@ -27,7 +27,7 @@ The ProofPay web application (`https://proofpay-gamma.vercel.app`) runs client-s
 
 ### 2.1 Browser LocalStorage Usage
 ProofPay uses browser `localStorage` solely to enhance local user experience:
-1. **Transaction & Draft State Restoration (Item 15):** Form inputs and active transaction hashes for bounty creation and proof submission are saved locally under keys such as `proofpay:pending_bounty` and `proofpay:pending_proof`. If your browser refreshes or your connection drops during transaction confirmation, your draft and status are restored automatically.
+1. **Transaction & Draft State Restoration:** Form inputs and active transaction hashes for bounty creation and proof submission are saved locally under keys such as `proofpay:pending_bounty` and `proofpay:pending_proof`. If your browser refreshes or your connection drops during transaction confirmation, your draft and status are restored automatically.
 2. **Visual Theme Preferences:** Stores your chosen color mode (`light` or `dark`).
 
 ### 2.2 What We Do NOT Store

@@ -1,4 +1,4 @@
-# ProofPay Terms of Use (Item 37)
+# ProofPay Terms of Use
 
 **Last Updated:** October 2, 2026  
 **Protocol Version:** 2.0.0

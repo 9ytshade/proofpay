@@ -57,7 +57,7 @@ def create_bounty(
 
 
 # ==============================================================================
-# 1. SSRF & URL VALIDATION ADVERSARIAL TESTS (Item 8)
+# 1. SSRF & URL VALIDATION ADVERSARIAL TESTS
 # ==============================================================================
 
 @pytest.mark.parametrize(
@@ -98,7 +98,7 @@ def test_ssrf_disallowed_deployment_hostnames(
 
 
 # ==============================================================================
-# 2. OVERSIZED PAYLOAD TRUNCATION (Item 6)
+# 2. OVERSIZED PAYLOAD TRUNCATION
 # ==============================================================================
 
 def test_oversized_evidence_payloads_truncated_safely(
@@ -134,7 +134,7 @@ def test_oversized_evidence_payloads_truncated_safely(
 
 
 # ==============================================================================
-# 3. PROMPT INJECTION & FORGED JSON RESILIENCE (Items 6 & 7)
+# 3. PROMPT INJECTION & FORGED JSON RESILIENCE
 # ==============================================================================
 
 def test_prompt_injection_in_deployment_isolated(
@@ -209,7 +209,7 @@ def test_forged_json_in_source_evidence_isolated(
 
 
 # ==============================================================================
-# 4. HTTP STATUS CODE MATRIX ADJUDICATION (Items 6 & 22)
+# 4. HTTP STATUS CODE MATRIX ADJUDICATION
 # ==============================================================================
 
 @pytest.mark.parametrize(
@@ -274,7 +274,7 @@ def test_transient_http_undetermined_codes(
 
 
 # ==============================================================================
-# 5. CONCURRENT BUILDER COMPETITION & SINGLE WINNER INVARIANT (Items 2 & 10)
+# 5. CONCURRENT BUILDER COMPETITION & SINGLE WINNER INVARIANT
 # ==============================================================================
 
 def test_competing_builders_first_approval_locks_bounty(
@@ -329,7 +329,7 @@ def test_competing_builders_first_approval_locks_bounty(
 
 
 # ==============================================================================
-# 6. TRANSFER FAILURE & ATOMICITY INVARIANTS (Item 3)
+# 6. TRANSFER FAILURE & ATOMICITY INVARIANTS
 # ==============================================================================
 
 def test_cannot_claim_refund_when_submissions_exist(

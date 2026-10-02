@@ -2,7 +2,7 @@
 
 ## Repository
 
-| Item | Value |
+| Property | Value |
 | --- | --- |
 | Branch | `main` |
 | Repository | https://github.com/9ytshade/proofpay |
@@ -12,7 +12,7 @@
 
 ## Contract Source
 
-| Item | Value |
+| Property | Value |
 | --- | --- |
 | Source file | `contracts/proofpay.py` |
 | SHA-256 | `0F8FC148EE575AFCE33A24144291BDBDF386E1224ED384AB249D32B382E023A7` |
@@ -34,7 +34,7 @@
 
 ## Deployment
 
-| Item | Value |
+| Property | Value |
 | --- | --- |
 | Deployer account | `proofpay-deployer` (`0x42960e62f1a41c61426f133c5e5412dd732f9303`) |
 | Deployment tx | `0xe2755d82c829084caac7efa7c056079da2036594c7f925571142a41d20f0deac` |
@@ -118,93 +118,93 @@ All core lifecycle scenarios have been executed live and finalized by validator 
      "reason": "All required acceptance criteria passed."
    }
    ```
-121: 5. **Settlement:**
-122:    - 100% PASS → `APPROVED`
-123:    - Reward transferred to builder.
-124:    - Bounty status transitioned to `awarded`.
-125: 6. **Balance Invariant & Delta Verification (Item 12):**
-126:    | Entity | Pre-Adjudication | Post-Adjudication | Net Delta | Verification Note |
-127:    | --- | --- | --- | --- | --- |
-128:    | **Client** (`0xfb73b3...`) | Escrow funded (-1.0 GEN) | Unchanged | 0.0 GEN | Escrow committed at bounty creation |
-129:    | **Builder** (`0xc7abf9...`) | Pre-payout balance | Pre-payout + 1.0 GEN | **+1.0 GEN** | Reward paid immediately on approval |
-130:    | **Contract Escrow** (`0x5CCe24...`) | 1.0 GEN (Bounty #1) | 0.0 GEN (Bounty #1) | **-1.0 GEN** | Total contract balance decrements by exactly bounty reward |
-131: 
-132: ---
-133: 
-134: ### Lifecycle Case 2: Negative Rejection with Deliberately Insufficient Evidence (Bounty #2)
-135: 
-136: > **Status:** **FINALIZED · REJECTED · BOUNTY REMAINS OPEN · NO PAYOUT**
-137: 
-138: 1. **Bounty #2 Created & Funded:**
-139:    - Client: `0x42960e62f1a41c61426f133c5e5412dd732f9303`
-140:    - Reward: 0.01 GEN
-141:    - Title: `ProofPay Negative Verification Case`
-142:    - Acceptance criteria requiring deliberately absent files:
-143:      - `The repository must contain a file named contracts/nonexistent_verification_file.py`
-144:      - `The file must export a constant named STRICT_AUDIT_PASS_TOKEN`
-145:    - Creation Tx: `0x49b4de92e058b780cea5f3b5d2924fb4be9df47f315a5535e694d44f25fee6f0` (FINALIZED)
-146: 2. **Proof Submitted (Insufficient Evidence):**
-147:    - Builder: `0xb0ECA97C7E1BF50c66E15de81EEeE841CE1fE48b`
-148:    - Canonical commit: `https://github.com/9ytshade/proofpay/commit/e83e87d2d8f92987b7008a213ebca76ab133c8c2`
-149:    - Evidence manifest: `README.md` (lacks the non-existent file/constant)
-150:    - Submission Tx: `0xf873ad4fad1e11c269a9d5545b697b1068ee6d9d83a35ad9cd809ef071aa44cb` (FINALIZED)
-151: 3. **Adjudication Consensus:**
-152:    - Adjudication Tx: `0x909999451144d9e15916a950975745888852316a2a34c9f5c7c894004e297e77` (FINALIZED)
-153: 4. **Verdict #2 On-Chain:**
-154:    ```json
-155:    {
-156:      "id": 2,
-157:      "bounty_id": 2,
-158:      "submission_id": 1,
-159:      "approved": false,
-160:      "required_criteria_passed": false,
-161:      "outcome": "REJECTED",
-162:      "score": 0,
-163:      "criteria_results": "FAIL|FAIL",
-164:      "criteria_report": "1. FAIL - The repository must contain a file named contracts/nonexistent_verification_file.py\n2. FAIL - The file must export a constant named STRICT_AUDIT_PASS_TOKEN",
-165:      "reason": "One or more required acceptance criteria failed."
-166:    }
-167:    ```
-168: 5. **State Invariants Maintained:**
-169:    - Submission status: `rejected`
-170:    - Bounty status: `open`
-171:    - Escrow remains intact, zero payout emitted.
-172: 6. **Balance Invariant & Delta Verification (Item 12):**
-173:    | Entity | Pre-Adjudication | Post-Adjudication | Net Delta | Verification Note |
-174:    | --- | --- | --- | --- | --- |
-175:    | **Client** (`0x42960e...`) | Escrow funded (-0.01 GEN) | Unchanged | 0.0 GEN | Escrow preserved in contract |
-176:    | **Builder** (`0xb0ECA9...`) | Unchanged | Unchanged | 0.0 GEN | No payout on rejected submission |
-177:    | **Contract Escrow** (`0x5CCe24...`) | 0.01 GEN (Bounty #2) | 0.01 GEN (Bounty #2) | **0.0 GEN** | Escrow remains locked for future valid submissions |
-178: 
-179: ---
-180: 
-181: ### Lifecycle Case 3: On-Chain Cancellation & Escrow Refund (Bounty #3)
-182: 
-183: > **Status:** **FINALIZED · CANCELLED · REFUNDED TO CLIENT**
-184: 
-185: 1. **Bounty #3 Created:**
-186:    - Client: `0x42960e62f1a41c61426f133c5e5412dd732f9303`
-187:    - Reward: 0.01 GEN
-188:    - Submissions: 0
-189:    - Creation Tx: `0xa6c533f59bc71a890bd3dbd06c41253f859a5532d638d5975d9a1f5f0ecce178` (FINALIZED)
-190: 2. **Cancellation by Client:**
-191:    - Client invoked `cancel_bounty(bounty_id=3)`
-192:    - Cancellation Tx: `0xa4c7793087e32d55c3e2d3a2b4abba26b731d55218008fef0b6a1000a91c4a19` (FINALIZED)
-193: 3. **State Invariants Maintained:**
-194:    - Bounty status: `cancelled`
-195:    - Escrowed reward refunded to client address `0x42960e62f1a41c61426f133c5e5412dd732f9303`.
-196: 4. **Balance Invariant & Delta Verification (Item 12):**
-197:    | Entity | Pre-Cancellation | Post-Cancellation | Net Delta | Verification Note |
-198:    | --- | --- | --- | --- | --- |
-199:    | **Client** (`0x42960e...`) | Pre-refund balance | Pre-refund + 0.01 GEN | **+0.01 GEN** | Full escrow returned to creator |
-200:    | **Builder** (None) | N/A | N/A | 0.0 GEN | 0 submissions existed |
-201:    | **Contract Escrow** (`0x5CCe24...`) | 0.01 GEN (Bounty #3) | 0.0 GEN (Bounty #3) | **-0.01 GEN** | Escrow zeroed out, bounty cancelled |
-202: 
-203: ---
+5. **Settlement:**
+   - 100% PASS → `APPROVED`
+   - Reward transferred to builder.
+   - Bounty status transitioned to `awarded`.
+6. **Balance Invariant & Delta Verification:**
+   | Entity | Pre-Adjudication | Post-Adjudication | Net Delta | Verification Note |
+   | --- | --- | --- | --- | --- |
+   | **Client** (`0xfb73b3...`) | Escrow funded (-1.0 GEN) | Unchanged | 0.0 GEN | Escrow committed at bounty creation |
+   | **Builder** (`0xc7abf9...`) | Pre-payout balance | Pre-payout + 1.0 GEN | **+1.0 GEN** | Reward paid immediately on approval |
+   | **Contract Escrow** (`0x5CCe24...`) | 1.0 GEN (Bounty #1) | 0.0 GEN (Bounty #1) | **-1.0 GEN** | Total contract balance decrements by exactly bounty reward |
+
+---
+
+### Lifecycle Case 2: Negative Rejection with Deliberately Insufficient Evidence (Bounty #2)
+
+> **Status:** **FINALIZED · REJECTED · BOUNTY REMAINS OPEN · NO PAYOUT**
+
+1. **Bounty #2 Created & Funded:**
+   - Client: `0x42960e62f1a41c61426f133c5e5412dd732f9303`
+   - Reward: 0.01 GEN
+   - Title: `ProofPay Negative Verification Case`
+   - Acceptance criteria requiring deliberately absent files:
+     - `The repository must contain a file named contracts/nonexistent_verification_file.py`
+     - `The file must export a constant named STRICT_AUDIT_PASS_TOKEN`
+   - Creation Tx: `0x49b4de92e058b780cea5f3b5d2924fb4be9df47f315a5535e694d44f25fee6f0` (FINALIZED)
+2. **Proof Submitted (Insufficient Evidence):**
+   - Builder: `0xb0ECA97C7E1BF50c66E15de81EEeE841CE1fE48b`
+   - Canonical commit: `https://github.com/9ytshade/proofpay/commit/e83e87d2d8f92987b7008a213ebca76ab133c8c2`
+   - Evidence manifest: `README.md` (lacks the non-existent file/constant)
+   - Submission Tx: `0xf873ad4fad1e11c269a9d5545b697b1068ee6d9d83a35ad9cd809ef071aa44cb` (FINALIZED)
+3. **Adjudication Consensus:**
+   - Adjudication Tx: `0x909999451144d9e15916a950975745888852316a2a34c9f5c7c894004e297e77` (FINALIZED)
+4. **Verdict #2 On-Chain:**
+   ```json
+   {
+     "id": 2,
+     "bounty_id": 2,
+     "submission_id": 1,
+     "approved": false,
+     "required_criteria_passed": false,
+     "outcome": "REJECTED",
+     "score": 0,
+     "criteria_results": "FAIL|FAIL",
+     "criteria_report": "1. FAIL - The repository must contain a file named contracts/nonexistent_verification_file.py\n2. FAIL - The file must export a constant named STRICT_AUDIT_PASS_TOKEN",
+     "reason": "One or more required acceptance criteria failed."
+   }
+   ```
+5. **State Invariants Maintained:**
+   - Submission status: `rejected`
+   - Bounty status: `open`
+   - Escrow remains intact, zero payout emitted.
+6. **Balance Invariant & Delta Verification:**
+   | Entity | Pre-Adjudication | Post-Adjudication | Net Delta | Verification Note |
+   | --- | --- | --- | --- | --- |
+   | **Client** (`0x42960e...`) | Escrow funded (-0.01 GEN) | Unchanged | 0.0 GEN | Escrow preserved in contract |
+   | **Builder** (`0xb0ECA9...`) | Unchanged | Unchanged | 0.0 GEN | No payout on rejected submission |
+   | **Contract Escrow** (`0x5CCe24...`) | 0.01 GEN (Bounty #2) | 0.01 GEN (Bounty #2) | **0.0 GEN** | Escrow remains locked for future valid submissions |
+
+---
+
+### Lifecycle Case 3: On-Chain Cancellation & Escrow Refund (Bounty #3)
+
+> **Status:** **FINALIZED · CANCELLED · REFUNDED TO CLIENT**
+
+1. **Bounty #3 Created:**
+   - Client: `0x42960e62f1a41c61426f133c5e5412dd732f9303`
+   - Reward: 0.01 GEN
+   - Submissions: 0
+   - Creation Tx: `0xa6c533f59bc71a890bd3dbd06c41253f859a5532d638d5975d9a1f5f0ecce178` (FINALIZED)
+2. **Cancellation by Client:**
+   - Client invoked `cancel_bounty(bounty_id=3)`
+   - Cancellation Tx: `0xa4c7793087e32d55c3e2d3a2b4abba26b731d55218008fef0b6a1000a91c4a19` (FINALIZED)
+3. **State Invariants Maintained:**
+   - Bounty status: `cancelled`
+   - Escrowed reward refunded to client address `0x42960e62f1a41c61426f133c5e5412dd732f9303`.
+4. **Balance Invariant & Delta Verification:**
+   | Entity | Pre-Cancellation | Post-Cancellation | Net Delta | Verification Note |
+   | --- | --- | --- | --- | --- |
+   | **Client** (`0x42960e...`) | Pre-refund balance | Pre-refund + 0.01 GEN | **+0.01 GEN** | Full escrow returned to creator |
+   | **Builder** (None) | N/A | N/A | 0.0 GEN | 0 submissions existed |
+   | **Contract Escrow** (`0x5CCe24...`) | 0.01 GEN (Bounty #3) | 0.0 GEN (Bounty #3) | **-0.01 GEN** | Escrow zeroed out, bounty cancelled |
+
+---
 
 ## Production Frontend Verification
 
-| Item | Status | Details |
+| Component | Status | Details |
 | --- | --- | --- |
 | Production URL | Accessible | https://proofpay-gamma.vercel.app/ |
 | HTTP Status | 200 OK | Verified via HTTP GET |

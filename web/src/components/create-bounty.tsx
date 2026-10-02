@@ -37,7 +37,7 @@ export function CreateBounty() {
     [values.criteria],
   );
 
-  // Restore pending transaction if browser was refreshed (Item 15)
+  // Restore pending transaction if browser was refreshed
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
@@ -150,7 +150,7 @@ export function CreateBounty() {
             </Field>
           </div>
 
-          {/* Pre-Confirmation Summary (Item 16) */}
+          {/* Pre-Confirmation Summary */}
           <div className="mt-6 rounded-xl border border-[var(--line)] bg-[var(--card)] p-4" aria-label="Transaction pre-confirmation summary">
             <p className="mono text-[10px] tracking-[.1em] text-[var(--signal)]">TRANSACTION PRE-CONFIRMATION SUMMARY</p>
             <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">

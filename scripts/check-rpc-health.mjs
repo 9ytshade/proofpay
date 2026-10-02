@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ProofPay RPC Health & Contract Liveness Probe (Node.js) - Item 32
+ * ProofPay RPC Health & Contract Liveness Probe (Node.js)
  * Checks GenLayer Studionet RPC endpoint health, round-trip latency, and contract responsiveness.
  */
 

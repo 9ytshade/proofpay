@@ -505,7 +505,7 @@ export function BountyRecord() {
             <p className="mono mt-6 border-t border-[var(--line)] pt-4 text-[9px] leading-5 tracking-[0.04em] text-[var(--muted-ink)]">READ FROM FINALIZED STUDIONET STATE · CHAIN 61999</p>
           </div>
 
-          {/* Financial Outcome Rules Disclosure (Item 24) */}
+          {/* Financial Outcome Rules Disclosure */}
           <div className="rounded-xl border border-[var(--line)] bg-[var(--card)] p-5">
             <SectionLabel>FINANCIAL OUTCOME RULES</SectionLabel>
             <ul className="mt-3 space-y-3 text-xs leading-5 text-[var(--muted-ink)]">
