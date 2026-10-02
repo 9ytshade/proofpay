@@ -8,7 +8,7 @@ import {
   shortAddress,
 } from "@/lib/genlayer";
 import { TransactionLifecycle } from "@/components/transaction-lifecycle";
-import { isFutureUnixTimestamp, parseGenToWei } from "@/lib/safety";
+import { isFutureUnixTimestamp, parseDeadlineToUtcPreview, parseGenToWei } from "@/lib/safety";
 
 type SubmitState = "idle" | "submitting" | "submitted" | "error";
 
@@ -35,6 +35,11 @@ export function CreateBounty() {
   const criteriaCount = useMemo(
     () => values.criteria.split("\n").map((item) => item.trim()).filter(Boolean).length,
     [values.criteria],
+  );
+
+  const deadlinePreview = useMemo(
+    () => parseDeadlineToUtcPreview(values.deadline),
+    [values.deadline],
   );
 
   // Restore pending transaction if browser was refreshed
@@ -145,8 +150,13 @@ export function CreateBounty() {
             <Field label="ACCEPTANCE CRITERIA" hint={`${criteriaCount}/5 criteria — one per line`}>
               <textarea required value={values.criteria} onChange={(event) => update("criteria", event.target.value)} maxLength={3000} rows={5} placeholder={"A public GitHub repository is accessible\nThe live deployment works over HTTPS\nThe handoff explains how to verify it"} />
             </Field>
-            <Field label="DEADLINE" hint="UTC time">
+            <Field label="DEADLINE" hint="Local time (stored as UTC on-chain)">
               <input required type="datetime-local" value={values.deadline} onChange={(event) => update("deadline", event.target.value)} />
+              {deadlinePreview && (
+                <span className="mono mt-1.5 block text-[10px] text-[var(--signal)]">
+                  → {deadlinePreview.utc}
+                </span>
+              )}
             </Field>
           </div>
 
@@ -159,18 +169,23 @@ export function CreateBounty() {
                 <span className="font-medium text-[var(--ink)]">{values.reward ? `${values.reward} GEN` : "—"}</span>
               </div>
               <div>
-                <span className="mono block text-[9px] text-[var(--muted-ink)]">NETWORK</span>
-                <span className="font-medium text-[var(--ink)]">Studionet (61999)</span>
+                <span className="mono block text-[9px] text-[var(--muted-ink)]">FINAL UTC DEADLINE</span>
+                <span className="mono font-medium text-[var(--ink)]">{deadlinePreview ? deadlinePreview.utc : "—"}</span>
               </div>
               <div>
-                <span className="mono block text-[9px] text-[var(--muted-ink)]">NETWORK FEE</span>
-                <span className="font-medium text-[var(--ink)]">0 GEN</span>
+                <span className="mono block text-[9px] text-[var(--muted-ink)]">NETWORK</span>
+                <span className="font-medium text-[var(--ink)]">Studionet (61999)</span>
               </div>
               <div>
                 <span className="mono block text-[9px] text-[var(--muted-ink)]">CONTRACT TARGET</span>
                 <span className="mono font-medium text-[var(--ink)]">{shortAddress(proofPayContractAddress)}</span>
               </div>
             </div>
+            {deadlinePreview && (
+              <p className="mt-3 border-t border-[var(--line)] pt-2 text-[11px] text-[var(--muted-ink)]">
+                Local selection <strong className="text-[var(--ink)]">{deadlinePreview.local}</strong> converts to exactly <strong className="text-[var(--ink)]">{deadlinePreview.utc}</strong> (Unix timestamp: {deadlinePreview.unix}) upon wallet confirmation.
+              </p>
+            )}
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] pt-5">

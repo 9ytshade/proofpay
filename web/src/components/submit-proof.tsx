@@ -97,7 +97,7 @@ export function SubmitProof() {
   const loadBounties = useCallback(async () => {
     setLoadState("loading");
     try {
-      const reads = await discoverFinalBounties();
+      const { bounties: reads } = await discoverFinalBounties();
       const loaded = reads.map(asBounty);
       setBounties(loaded.filter((bounty): bounty is Bounty => bounty !== null));
       setLoadState("ready");

@@ -25,7 +25,7 @@ export type AdjudicationResult = {
   builder?: string;
 };
 
-type LifecycleState = {
+export type LifecycleState = {
   status: string;
   result?: string;
   detail: string;
@@ -45,7 +45,7 @@ function shortHash(hash: string) {
   return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
 }
 
-function extractContractError(tx: Record<string, unknown>): { isError: boolean; message?: string } {
+export function extractContractError(tx: Record<string, unknown>): { isError: boolean; message?: string } {
   const consensusData = tx.consensus_data as Record<string, unknown> | undefined;
 
   // GenLayer Studionet consensus data stores leader execution receipts
@@ -110,7 +110,7 @@ function extractContractError(tx: Record<string, unknown>): { isError: boolean; 
   return { isError: false };
 }
 
-function describe(transaction: Record<string, unknown>): LifecycleState {
+export function describe(transaction: Record<string, unknown>): LifecycleState {
   const statusRaw = String(transaction.statusName ?? transaction.status ?? "PENDING");
   const normalized = statusRaw || "PENDING";
   const resultRaw = transaction.resultName ? String(transaction.resultName) : undefined;
@@ -228,13 +228,14 @@ export function TransactionLifecycle({
   }, [hash, hasPromptedModal, onStatusChange, reviewContext, adjudication]);
 
   useEffect(() => {
+    if (lifecycle.done) return;
     const initialPoll = window.setTimeout(() => void refresh(), 0);
     const poll = window.setInterval(() => void refresh(), 5000);
     return () => {
       window.clearTimeout(initialPoll);
       window.clearInterval(poll);
     };
-  }, [refresh]);
+  }, [refresh, lifecycle.done]);
 
   async function copyHash() {
     await navigator.clipboard.writeText(hash);

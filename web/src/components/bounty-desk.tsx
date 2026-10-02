@@ -55,8 +55,15 @@ function deadlineState(value: number | string, status: string) {
 
 function statusClass(status: string) { return `status-badge status-${status.toLowerCase()}`; }
 
+const PAGE_SIZE = 30;
+
 export function BountyDesk({ mode = "featured" }: { mode?: BountyDeskMode }) {
   const [bounties, setBounties] = useState<Bounty[]>([]);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [failedIds, setFailedIds] = useState<number[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [state, setState] = useState<DeskState>("loading");
   const [selected, setSelected] = useState<Bounty | null>(null);
   const [search, setSearch] = useState("");
@@ -65,15 +72,72 @@ export function BountyDesk({ mode = "featured" }: { mode?: BountyDeskMode }) {
   const loadBounties = useCallback(async () => {
     setState("loading");
     try {
-      const results = await discoverFinalBounties();
-      const loaded = results.map(toBounty).filter((bounty): bounty is Bounty => bounty !== null);
+      const result = await discoverFinalBounties({ offset: 0, limit: mode === "featured" ? 10 : PAGE_SIZE });
+      const loaded = result.bounties.map(toBounty).filter((bounty): bounty is Bounty => bounty !== null);
       setBounties(loaded.sort((left, right) => Number(right.id) - Number(left.id)));
+      setTotalCount(result.totalCount);
+      setFailedIds(result.failedIds);
+      setHasMore(result.hasMore);
       setState("ready");
     } catch {
       setBounties([]);
+      setTotalCount(0);
+      setFailedIds([]);
+      setHasMore(false);
       setState("error");
     }
-  }, []);
+  }, [mode]);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const offset = bounties.length + failedIds.length;
+      const result = await discoverFinalBounties({ offset, limit: PAGE_SIZE });
+      const loaded = result.bounties.map(toBounty).filter((bounty): bounty is Bounty => bounty !== null);
+      setBounties((prev) => {
+        const merged = [...prev];
+        for (const item of loaded) {
+          if (!merged.some((b) => b.id === item.id)) {
+            merged.push(item);
+          }
+        }
+        return merged.sort((left, right) => Number(right.id) - Number(left.id));
+      });
+      setTotalCount(result.totalCount);
+      setFailedIds((prev) => Array.from(new Set([...prev, ...result.failedIds])));
+      setHasMore(result.hasMore);
+    } catch {
+      // Keep existing data
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const retryFailedReads = async () => {
+    if (retrying || failedIds.length === 0) return;
+    setRetrying(true);
+    try {
+      const result = await discoverFinalBounties({ specificIds: failedIds });
+      const recovered = result.bounties.map(toBounty).filter((bounty): bounty is Bounty => bounty !== null);
+      if (recovered.length > 0) {
+        setBounties((prev) => {
+          const merged = [...prev];
+          for (const item of recovered) {
+            if (!merged.some((b) => b.id === item.id)) {
+              merged.push(item);
+            }
+          }
+          return merged.sort((left, right) => Number(right.id) - Number(left.id));
+        });
+      }
+      setFailedIds(result.failedIds);
+    } catch {
+      // Keep failedIds on error
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => void loadBounties(), 0);
@@ -91,8 +155,31 @@ export function BountyDesk({ mode = "featured" }: { mode?: BountyDeskMode }) {
       <section id="bounties" className="reveal reveal-delay-3 border-y border-[var(--ink)] py-5 sm:py-7">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div><p className="mono text-[10px] tracking-[0.12em] text-[var(--muted-ink)]">{mode === "featured" ? "RECENT BOUNTIES" : "FINALIZED BOUNTY RECORDS"}</p><p className="mt-1 text-sm text-[var(--muted-ink)]">Read directly from ProofPay on Studionet.</p></div>
-          <div className="flex items-center gap-2"><span className="mono rounded-full bg-[var(--verdict)] px-3 py-1 text-[10px] font-medium tracking-[0.08em] text-[#18231f]">{state === "ready" ? `${bounties.length} ON-CHAIN` : "SYNCING"}</span><button onClick={() => void loadBounties()} className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]">REFRESH</button></div>
+          <div className="flex items-center gap-2"><span className="mono rounded-full bg-[var(--verdict)] px-3 py-1 text-[10px] font-medium tracking-[0.08em] text-[#18231f]">{state === "ready" ? `${bounties.length} OF ${totalCount} ON-CHAIN` : "SYNCING"}</span><button onClick={() => void loadBounties()} className="mono rounded-full border border-[var(--line)] px-3 py-1 text-[10px] tracking-[.08em] transition hover:border-[var(--ink)]">REFRESH</button></div>
         </div>
+
+        {failedIds.length > 0 && (
+          <div className="mb-5 border border-[#c48737] bg-[#fffaf0] p-4 text-[#5c3e10] dark:bg-[#251b0f] dark:text-[#f4d799] dark:border-[#825c27]" role="alert">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="mono text-[10px] font-bold tracking-[0.1em] text-[#8c5817] dark:text-[#f3bf65]">
+                  PARTIAL ON-CHAIN DATA WARNING
+                </p>
+                <p className="mt-1 text-xs">
+                  {failedIds.length} bounty record{failedIds.length === 1 ? " was" : "s were"} not returned by the RPC (Failed ID{failedIds.length === 1 ? "" : "s"}: {failedIds.slice(0, 5).map(id => `#${id}`).join(", ")}{failedIds.length > 5 ? "…" : ""}).
+                </p>
+              </div>
+              <button
+                onClick={() => void retryFailedReads()}
+                disabled={retrying}
+                className="mono rounded border border-[#8c5817] px-3 py-1 text-[10px] tracking-[0.08em] transition hover:bg-[#8c5817] hover:text-white disabled:opacity-50"
+              >
+                {retrying ? "RETRYING…" : `RETRY FAILED (${failedIds.length})`}
+              </button>
+            </div>
+          </div>
+        )}
+
         {mode === "featured" && <div className="mb-4 flex justify-end"><Link href="/bounties" className="mono text-[10px] tracking-[.08em] text-[var(--signal)] underline underline-offset-4">BROWSE ALL BOUNTIES →</Link></div>}
         {mode === "all" && <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_12rem]"><label className="sr-only" htmlFor="bounty-search">Search bounty records</label><input id="bounty-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search titles and briefs" className="min-w-0 border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-ink)] focus:border-[var(--signal)]" /><label className="sr-only" htmlFor="bounty-status">Filter by bounty status</label><select id="bounty-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-sm text-[var(--ink)] outline-none focus:border-[var(--signal)]"><option value="all">All statuses</option><option value="open">Open</option><option value="awarded">Awarded</option><option value="cancelled">Cancelled</option><option value="refunded">Refunded</option></select></div>}
         {state === "loading" && <DeskPlaceholder />}
@@ -100,6 +187,18 @@ export function BountyDesk({ mode = "featured" }: { mode?: BountyDeskMode }) {
         {state === "ready" && bounties.length === 0 && <DeskEmpty title="No bounties have been published yet." copy="Be the first client to lock an outcome and make the public case." />}
         {state === "ready" && bounties.length > 0 && visibleBounties.length === 0 && <DeskEmpty title="No matching bounty records." copy="Try another search or status filter." />}
         {state === "ready" && visibleBounties.length > 0 && <div className="grid divide-y divide-[var(--line)] md:grid-cols-2 md:divide-x md:divide-y-0">{visibleBounties.map((bounty) => <BountyCard bounty={bounty} key={String(bounty.id)} onQuickView={() => setSelected(bounty)} />)}</div>}
+
+        {mode === "all" && hasMore && (
+          <div className="mt-8 flex justify-center">
+            <button
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="mono rounded-full border border-[var(--ink)] bg-[var(--card)] px-6 py-2.5 text-xs font-medium tracking-[0.08em] transition hover:bg-[var(--ink)] hover:text-[var(--paper)] disabled:opacity-50"
+            >
+              {loadingMore ? "LOADING OLDER BOUNTIES…" : `LOAD MORE BOUNTIES (${bounties.length} OF ${totalCount} LOADED)`}
+            </button>
+          </div>
+        )}
       </section>
       {selected && <BountyDetail bounty={selected} onClose={() => setSelected(null)} />}
     </>

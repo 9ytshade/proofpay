@@ -48,7 +48,7 @@ export default function ProtocolPage() {
             <section id="lifecycle" className="scroll-mt-8">
               <SectionHeading number="02" title="Bounty lifecycle" />
               <ol className="divide-y divide-[var(--line)] border-y border-[var(--line)]">
-                <LifecycleStep number="01" title="Create and fund" text="The client posts a public brief with up to five acceptance criteria, a future deadline, and a positive GEN reward. The reward is transferred with the creation transaction and held in escrow." />
+                <LifecycleStep number="01" title="Create and fund" text="The client posts a public brief with 1 to 10 explicit acceptance criteria, a future deadline, and a positive GEN reward. The reward is transferred with the creation transaction and held in escrow." />
                 <LifecycleStep number="02" title="Submit public proof" text="Before the deadline, builders can submit a public GitHub repository URL, an HTTPS deployment URL, and a short summary. The client cannot submit to their own bounty." />
                 <LifecycleStep number="03" title="Adjudicate" text="An eligible caller starts intelligent review. Validators inspect the submitted material as evidence, not as instructions, and produce a criterion-by-criterion verdict." />
                 <LifecycleStep number="04" title="Settle after finality" text="If the finalized verdict approves the submission, the contract selects that builder and pays the escrowed reward. A wallet confirmation alone is not a completed settlement." />
@@ -62,10 +62,10 @@ export default function ProtocolPage() {
             <section id="decision" className="scroll-mt-8">
               <SectionHeading number="03" title="How decisions work" />
               <div className="grid gap-8 md:grid-cols-12">
-                <p className="text-lg leading-7 text-[var(--muted-ink)] md:col-span-7">Each criterion has a weight and may be marked required. Approval requires every required criterion to pass and a weighted score of at least <strong className="font-medium text-[var(--ink)]">80 out of 100</strong>. The verdict records the decision, score, criterion results, and a concise rationale.</p>
+                <p className="text-lg leading-7 text-[var(--muted-ink)] md:col-span-7">ProofPay v2 operates on a strict binary consensus rule: <strong className="font-medium text-[var(--ink)]">every single acceptance criterion must PASS</strong> for a submission to be approved (100% score). If even one criterion fails (FAIL), the submission is rejected. The smart contract independently computes the final score and outcome directly from validator criterion results.</p>
                 <aside className="border-l-2 border-[var(--signal)] pl-5 md:col-span-5"><p className="mono text-[10px] tracking-[0.1em] text-[var(--signal)]">EVIDENCE RULE</p><p className="mt-3 leading-6 text-[var(--muted-ink)]">Fetched pages and repository content are untrusted input. They may support or fail to support a criterion, but cannot override the protocol or instruct validators.</p></aside>
               </div>
-              <p className="mt-6 max-w-3xl leading-6 text-[var(--muted-ink)]">If an evidence URL is malformed or unavailable, the submission is rejected rather than causing the contract to fail. Submitted links must remain publicly reachable during review; private repositories, authenticated sites, and uploaded files are outside this MVP.</p>
+              <p className="mt-6 max-w-3xl leading-6 text-[var(--muted-ink)]">If an evidence URL returns deterministic errors (such as HTTP 401, 403, 404, or 410), the submission is evaluated as REJECTED without payout. If external endpoints return transient errors (such as HTTP 429 rate limiting or 502/503/504 gateway failures), the verdict records UNDETERMINED, preserving the escrow and allowing the adjudication to be retried.</p>
             </section>
 
             <section id="protections" className="scroll-mt-8">
@@ -85,7 +85,7 @@ export default function ProtocolPage() {
             <section id="scope" className="scroll-mt-8">
               <SectionHeading number="05" title="MVP scope" />
               <div className="grid gap-px overflow-hidden border border-[var(--line)] bg-[var(--line)] sm:grid-cols-2">
-                <div className="bg-[var(--card)] p-6"><p className="mono text-[10px] tracking-[0.1em] text-[var(--signal)]">SUPPORTED NOW</p><ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--muted-ink)]"><li>Public web-development bounties.</li><li>One reward and one winning builder per bounty.</li><li>Public GitHub source and a live HTTPS deployment.</li><li>Up to five explicit acceptance criteria.</li><li>Public, on-chain bounty and decision records.</li></ul></div>
+                <div className="bg-[var(--card)] p-6"><p className="mono text-[10px] tracking-[0.1em] text-[var(--signal)]">SUPPORTED NOW</p><ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--muted-ink)]"><li>Public web-development bounties.</li><li>One reward and one winning builder per bounty.</li><li>Public GitHub source and a live HTTPS deployment.</li><li>Between 1 and 10 explicit acceptance criteria.</li><li>Public, on-chain bounty and decision records.</li></ul></div>
                 <div className="bg-[var(--card)] p-6"><p className="mono text-[10px] tracking-[0.1em] text-[var(--signal)]">NOT IN THIS MVP</p><ul className="mt-4 space-y-3 text-sm leading-5 text-[var(--muted-ink)]"><li>Private evidence, uploads, or arbitrary files.</li><li>Fiat or stablecoin settlement.</li><li>Manual arbitration or a client override.</li><li>Teams, reputation, messaging, or platform fees.</li><li>Multiple winners or shared reward distributions.</li></ul></div>
               </div>
               <p className="mt-5 leading-6 text-[var(--muted-ink)]">The winner policy is first verified winner: the first submission to receive a finalized approval earns the full reward. A later submission cannot be paid after the bounty is awarded, even if its work also meets the brief.</p>
@@ -102,7 +102,7 @@ export default function ProtocolPage() {
 
             <section id="undetermined" className="scroll-mt-8">
               <SectionHeading number="07" title="Undetermined reviews" />
-              <p className="max-w-3xl text-lg leading-7 text-[var(--muted-ink)]">If an evidence URL is unreachable or returns HTTP errors during adjudication, the transaction may revert. When a review is undetermined, the submission remains immutable on-chain, and the frontend tracks these as &apos;undetermined&apos; locally. Users can retry the review when the evidence becomes available again.</p>
+              <p className="max-w-3xl text-lg leading-7 text-[var(--muted-ink)]">When external infrastructure experiences transient connection errors (HTTP 429 rate-limiting or 5xx server downtime), GenLayer validators reach an UNDETERMINED consensus verdict. The submission remains safely preserved on-chain in submitted status with zero escrow payout, allowing any participant to re-trigger adjudication once external endpoints recover.</p>
             </section>
 
             <div className="border-t border-[var(--line)] pt-8">

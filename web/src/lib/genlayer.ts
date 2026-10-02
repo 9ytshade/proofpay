@@ -10,6 +10,8 @@ export const PROOFPAY_NETWORK = {
   slug: "studionet",
 } as const;
 
+export const proofPayChainId = studionet.id;
+
 export const genLayerExplorerUrl = "https://explorer-studio.genlayer.com";
 
 export function genLayerTransactionUrl(hash: string) {
@@ -56,7 +58,7 @@ async function quietReadContract(functionName: string, args: CalldataEncodable[]
     false,
   ]);
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(studionet.rpcUrls.default.http[0], {
       method: "POST",
@@ -82,18 +84,29 @@ async function quietReadContract(functionName: string, args: CalldataEncodable[]
     if (typeof result !== "string") throw new Error("Unexpected GenLayer RPC response.");
     return toJsonSafe(abi.calldata.decode(fromHex(`0x${result}`, "bytes")));
   } finally {
-    window.clearTimeout(timeout);
+    clearTimeout(timeout);
   }
 }
 
-export async function readFinalContract(functionName: string, args: CalldataEncodable[]) {
+export type ContractReader = (functionName: string, args: CalldataEncodable[]) => Promise<unknown>;
+
+let customContractReader: ContractReader | null = null;
+
+export function setContractReaderForTesting(reader: ContractReader | null) {
+  customContractReader = reader;
+}
+
+export async function readFinalContract(functionName: string, args: CalldataEncodable[]): Promise<unknown> {
+  if (customContractReader) {
+    return customContractReader(functionName, args);
+  }
   const attempts = 3;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await quietReadContract(functionName, args);
     } catch (error) {
       if (!isTransportFailure(error) || attempt === attempts) throw error;
-      await new Promise((resolve) => window.setTimeout(resolve, attempt * 1000));
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
     }
   }
   throw new Error("Unable to reach GenLayer RPC after retrying.");
@@ -119,37 +132,90 @@ export async function checkContractVersionCompatibility(): Promise<{ compatible:
   }
 }
 
+export type BountyDiscoveryOptions = {
+  offset?: number;
+  limit?: number;
+  specificIds?: number[];
+};
+
+export type BountyDiscoveryResult = {
+  bounties: unknown[];
+  totalCount: number;
+  loadedCount: number;
+  failedIds: number[];
+  hasMore: boolean;
+};
+
 /**
  * ProofPay v2 defines get_bounty_count().
- * Reads bounded canonical finalized bounties (1..count) using batch concurrency.
+ * Reads canonical finalized bounties newest-first with pagination and error tracking.
  */
-export async function discoverFinalBounties(): Promise<unknown[]> {
-  const rawCount = await readFinalContract("get_bounty_count", []);
-  const count = typeof rawCount === "bigint" ? Number(rawCount) : Number(rawCount ?? 0);
-  if (!Number.isSafeInteger(count) || count <= 0) {
-    return [];
+export async function discoverFinalBounties(
+  options: BountyDiscoveryOptions = {},
+): Promise<BountyDiscoveryResult> {
+  const { offset = 0, limit = proofPayDiscoveryLimit, specificIds } = options;
+
+  let totalCount = 0;
+  let targetIds: number[] = [];
+
+  if (specificIds && specificIds.length > 0) {
+    targetIds = [...specificIds];
+    totalCount = specificIds.length;
+  } else {
+    const rawCount = await readFinalContract("get_bounty_count", []);
+    const count = typeof rawCount === "bigint" ? Number(rawCount) : Number(rawCount ?? 0);
+    if (!Number.isSafeInteger(count) || count <= 0) {
+      return { bounties: [], totalCount: 0, loadedCount: 0, failedIds: [], hasMore: false };
+    }
+    totalCount = count;
+
+    // Load newest bounties first: starting from (count - offset) down to max(1, count - offset - limit + 1)
+    const startId = count - offset;
+    const endId = Math.max(1, startId - limit + 1);
+    if (startId >= 1) {
+      for (let id = startId; id >= endId; id--) {
+        targetIds.push(id);
+      }
+    }
   }
-  const limit = Math.min(count, proofPayDiscoveryLimit);
-  const ids = Array.from({ length: limit }, (_, index) => index + 1);
 
   const bounties: unknown[] = [];
+  const failedIds: number[] = [];
   const batchSize = 10;
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const slice = ids.slice(i, i + batchSize);
+
+  for (let i = 0; i < targetIds.length; i += batchSize) {
+    const slice = targetIds.slice(i, i + batchSize);
     const batchResults = await Promise.all(
       slice.map(async (bountyId) => {
         try {
-          return await readFinalContract("get_bounty", [bountyId]);
+          const res = await readFinalContract("get_bounty", [bountyId]);
+          if (res !== null && res !== undefined) {
+            return { id: bountyId, bounty: res, error: false };
+          }
+          return { id: bountyId, bounty: null, error: true };
         } catch {
-          return null;
+          return { id: bountyId, bounty: null, error: true };
         }
       }),
     );
     for (const res of batchResults) {
-      if (res !== null) bounties.push(res);
+      if (res.error || res.bounty === null) {
+        failedIds.push(res.id);
+      } else {
+        bounties.push(res.bounty);
+      }
     }
   }
-  return bounties;
+
+  const hasMore = !specificIds && offset + targetIds.length < totalCount;
+
+  return {
+    bounties,
+    totalCount,
+    loadedCount: bounties.length,
+    failedIds,
+    hasMore,
+  };
 }
 
 export function shortAddress(address: string) {

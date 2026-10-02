@@ -205,3 +205,19 @@ export function parseCriteriaResults(results?: string[] | string | null): string
   return [];
 }
 
+export type DeadlineToUtcPreview = {
+  utc: string;
+  local: string;
+  unix: number;
+};
+
+export function parseDeadlineToUtcPreview(deadlineValue: string): DeadlineToUtcPreview | null {
+  if (!deadlineValue || !deadlineValue.trim()) return null;
+  const date = new Date(deadlineValue);
+  if (Number.isNaN(date.valueOf())) return null;
+  const utc = date.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+  const local = date.toLocaleString();
+  const unix = Math.floor(date.getTime() / 1000);
+  return { utc, local, unix };
+}
+

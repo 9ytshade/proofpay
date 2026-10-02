@@ -64,7 +64,7 @@ type Verdict = {
   evidence_note?: string;
 };
 
-type ReviewRecord = {
+export type ReviewRecord = {
   bounty: Bounty;
   submission: Submission;
   verdict?: Verdict;
@@ -82,7 +82,7 @@ function shortHash(hash: string) {
   return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
 }
 
-function getDisplayStatus(
+export function getDisplayStatus(
   record: ReviewRecord,
   undeterminedMap: Record<string, UndeterminedInfo>,
 ): "submitted" | "approved" | "rejected" | "undetermined" | "net-failure" {
@@ -94,8 +94,17 @@ function getDisplayStatus(
   return "submitted";
 }
 
+type FailedReadTarget = {
+  type: "bounty" | "submission" | "verdict";
+  bountyId: number;
+  submissionId?: number;
+  verdictId?: number;
+};
+
 export function ReviewDesk() {
   const [records, setRecords] = useState<ReviewRecord[]>([]);
+  const [failedReads, setFailedReads] = useState<FailedReadTarget[]>([]);
+  const [retrying, setRetrying] = useState(false);
   const [undeterminedMap, setUndeterminedMap] = useState<
     Record<string, UndeterminedInfo>
   >(getUndeterminedReviews);
@@ -120,8 +129,16 @@ export function ReviewDesk() {
   const loadRecords = useCallback(async () => {
     setLoading(true);
     setError("");
+    const failedList: FailedReadTarget[] = [];
     try {
-      const bountyReads = await discoverFinalBounties();
+      const discoveryResult = await discoverFinalBounties();
+      const bountyReads = discoveryResult.bounties;
+      if (discoveryResult.failedIds.length > 0) {
+        for (const fId of discoveryResult.failedIds) {
+          failedList.push({ type: "bounty", bountyId: fId });
+        }
+      }
+
       const bounties = bountyReads.flatMap((read) =>
         isRecord(read, [
           "id",
@@ -140,10 +157,18 @@ export function ReviewDesk() {
             { length: Number(bounty.submission_count) },
             (_, index) => ({ bounty, submissionId: index + 1 }),
           ).map(async ({ bounty, submissionId }) => {
-            const submission = await readFinalContract("get_submission", [
-              Number(bounty.id),
-              submissionId,
-            ]);
+            let submission: unknown;
+            try {
+              submission = await readFinalContract("get_submission", [
+                Number(bounty.id),
+                submissionId,
+              ]);
+            } catch {
+              return {
+                failed: { type: "submission" as const, bountyId: Number(bounty.id), submissionId },
+                record: null,
+              };
+            }
             if (
               !isRecord(submission, [
                 "submission_id",
@@ -151,36 +176,64 @@ export function ReviewDesk() {
                 "status",
                 "verdict_id",
               ])
-            )
-              return null;
+            ) {
+              return {
+                failed: { type: "submission" as const, bountyId: Number(bounty.id), submissionId },
+                record: null,
+              };
+            }
             const typedSubmission = submission as unknown as Submission;
             let verdict: Verdict | undefined;
+            let verdictFailed: FailedReadTarget | undefined;
             if (Number(typedSubmission.verdict_id) > 0) {
-              const result = await readFinalContract("get_verdict", [
-                Number(typedSubmission.verdict_id),
-              ]);
-              if (
-                isRecord(result, [
-                  "approved",
-                  "required_criteria_passed",
-                  "score",
-                  "criteria_report",
-                  "reason",
-                ])
-              )
-                verdict = result as unknown as Verdict;
+              try {
+                const result = await readFinalContract("get_verdict", [
+                  Number(typedSubmission.verdict_id),
+                ]);
+                if (
+                  isRecord(result, [
+                    "approved",
+                    "required_criteria_passed",
+                    "score",
+                    "criteria_report",
+                    "reason",
+                  ])
+                ) {
+                  verdict = result as unknown as Verdict;
+                }
+              } catch {
+                verdictFailed = {
+                  type: "verdict",
+                  bountyId: Number(bounty.id),
+                  submissionId,
+                  verdictId: Number(typedSubmission.verdict_id),
+                };
+              }
             }
-            return { bounty, submission: typedSubmission, verdict };
+            return {
+              failed: verdictFailed,
+              record: { bounty, submission: typedSubmission, verdict },
+            };
           }),
         ),
       );
+
+      const validRecords: ReviewRecord[] = [];
+      for (const res of submissions) {
+        if (res.status === "fulfilled" && res.value) {
+          if (res.value.record) {
+            validRecords.push(res.value.record);
+          }
+          if (res.value.failed) {
+            failedList.push(res.value.failed);
+          }
+        }
+      }
+
       setRecords(
-        submissions
-          .flatMap((read) =>
-            read.status === "fulfilled" && read.value ? [read.value] : [],
-          )
-          .sort((left, right) => Number(right.bounty.id) - Number(left.bounty.id)),
+        validRecords.sort((left, right) => Number(right.bounty.id) - Number(left.bounty.id)),
       );
+      setFailedReads(failedList);
     } catch {
       setError(
         "Could not load finalized submissions. Check your connection, then refresh.",
@@ -189,6 +242,16 @@ export function ReviewDesk() {
       setLoading(false);
     }
   }, []);
+
+  const retryFailedReads = async () => {
+    if (retrying || failedReads.length === 0) return;
+    setRetrying(true);
+    try {
+      await loadRecords();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadRecords(), 0);
@@ -327,6 +390,28 @@ export function ReviewDesk() {
               <option value="undetermined">Undetermined</option>
             </select>
           </div>
+
+          {failedReads.length > 0 && (
+            <div className="mb-5 border border-[#c48737] bg-[#fffaf0] p-4 text-[#5c3e10] dark:bg-[#251b0f] dark:text-[#f4d799] dark:border-[#825c27]" role="alert">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="mono text-[10px] font-bold tracking-[0.1em] text-[#8c5817] dark:text-[#f3bf65]">
+                    PARTIAL ON-CHAIN DATA WARNING
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {failedReads.length} record{failedReads.length === 1 ? "" : "s"} could not be fetched due to RPC read errors. Displayed evidence list may be incomplete.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void retryFailedReads()}
+                  disabled={retrying}
+                  className="mono rounded border border-[#8c5817] px-3 py-1 text-[10px] tracking-[0.08em] transition hover:bg-[#8c5817] hover:text-white disabled:opacity-50"
+                >
+                  {retrying ? "RETRYING…" : `RETRY FAILED (${failedReads.length})`}
+                </button>
+              </div>
+            </div>
+          )}
 
           {loading && (
             <p className="py-8 text-[var(--muted-ink)]">
