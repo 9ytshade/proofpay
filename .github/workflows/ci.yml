@@ -40,7 +40,8 @@ jobs:
         if: steps.cache-genvm.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.cache/genvm-linter/genvmroot
-          curl -fsSL "https://github.com/genlayer/genvm/releases/download/${{ env.GENVM_VERSION }}/genvm-universal-${{ env.GENVM_VERSION }}.tar.xz" \
+          mkdir -p /tmp/genvm-extracted
+          curl -fsSL "https://github.com/genlayerlabs/genvm/releases/download/${{ env.GENVM_VERSION }}/genvm-universal.tar.xz" \
             -o /tmp/genvm.tar.xz
           tar -xf /tmp/genvm.tar.xz -C /tmp/genvm-extracted
           cp -r /tmp/genvm-extracted/runners ~/.cache/genvm-linter/genvmroot/runners

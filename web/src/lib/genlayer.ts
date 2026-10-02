@@ -18,7 +18,7 @@ export function genLayerTransactionUrl(hash: string) {
 
 export const proofPayContractAddress =
   process.env.NEXT_PUBLIC_PROOFPAY_CONTRACT_ADDRESS ??
-  "0xa1c53F5afFF44136d63dDF02dFDfA0ecEcFF32b7";
+  "0x5CCe24450B88BFC705794830C717c2D511253bF5";
 
 const discoveryLimit = Number(process.env.NEXT_PUBLIC_PROOFPAY_DISCOVERY_LIMIT ?? "100");
 export const proofPayDiscoveryLimit = Number.isSafeInteger(discoveryLimit) && discoveryLimit > 0 ? discoveryLimit : 100;

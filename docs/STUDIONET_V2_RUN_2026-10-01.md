@@ -71,7 +71,7 @@
 ### Frontend tests
 
 ```
-✓ vitest: 9 passed (1 file: src/lib/safety.test.ts)
+✓ vitest: 10 passed (1 file: src/lib/safety.test.ts)
 ✓ ESLint: exit code 0 (clean)
 ✓ Next.js production build: compiled successfully, 10/10 pages
 ```
@@ -142,13 +142,10 @@ NEXT_PUBLIC_PROOFPAY_CONTRACT_ADDRESS=0x5CCe24450B88BFC705794830C717c2D511253bF5
 NEXT_PUBLIC_PROOFPAY_DISCOVERY_LIMIT=100
 ```
 
+Verified on Vercel production: `NEXT_PUBLIC_PROOFPAY_CONTRACT_ADDRESS` is set to `0x5CCe24450B88BFC705794830C717c2D511253bF5`.
+
 ## Known limitations
 
 1. **CLI payable writes:** GenLayer CLI 0.39.1 `write` does not support `--value`,
    so payable methods (`create_bounty`) cannot be called from the CLI. Use the
    web frontend with MetaMask instead.
-2. **CI run:** GitHub Actions CI workflow is committed but not yet triggered
-   (requires `git push origin proofpay-v2-hardening` to the remote).
-3. **Vercel deployment:** The live frontend at https://proofpay-gamma.vercel.app
-   needs the `NEXT_PUBLIC_PROOFPAY_CONTRACT_ADDRESS` environment variable updated
-   to `0x5CCe24450B88BFC705794830C717c2D511253bF5` in the Vercel dashboard.

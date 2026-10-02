@@ -62,7 +62,7 @@
 | `required_criteria_passed` | `bool` | Whether all required criteria passed. |
 | `outcome` | `str` | `APPROVED`, `REJECTED`, or `UNDETERMINED`. |
 | `score` | `u8` | Derived percentage score. |
-| `criteria_results` | `str` | Newline-delimited per-criterion results (`PASS`, `FAIL`, or `UNDETERMINED`). |
+| `criteria_results` | `str` | Pipe-separated per-criterion results (`PASS|FAIL|UNDETERMINED`). |
 | `criteria_report` | `str` | Per-criterion narrative report. |
 | `reason` | `str` | Concise outcome reason. |
 | `evidence_note` | `str` | Validator note about evidence accessibility. |
@@ -112,12 +112,19 @@ paths within the repository. Each path must:
 
 - be at most 240 chars
 - not contain `..`, backslash, or null bytes
-- have an allowed file extension (`.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.sol`,
-  `.rs`, `.go`, `.html`, `.css`, `.json`, `.md`, `.txt`, `.toml`, `.yaml`,
-  `.yml`, `.cfg`, `.ini`, `.sh`, `.sql`, `.xml`, `.csv`)
+- have an allowed file extension matching the contract's supported text files:
+  `.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.json`, `.md`, `.txt`,
+  `.html`, `.css`, `.scss`, `.sass`, `.less`, `.yaml`, `.yml`, `.toml`, `.sol`,
+  `.rs`, `.go`, `.java`, `.kt`, `.sh`, `.ps1`, `.sql`, `.vue`, `.svelte`
 
-Validators fetch only these specific files from the pinned commit — not the
+Validators fetch only these specific files from the pinned commit via `raw.githubusercontent.com` — not the
 repository tree, not the interactive GitHub commit page.
+
+### Evidence accessibility and precheck rules
+
+Validators perform HTTP prechecks on both source files and the live deployment:
+- **HTTP 404 / 410 / Empty file:** Permanent failure &rarr; evaluated as `FAIL` across criteria, leading to a `REJECTED` verdict (escrow remains safe, bounty stays open).
+- **HTTP 429 / 5xx:** Transient failure &rarr; evaluated as `UNDETERMINED` across criteria, keeping the submission in `submitted` status so it can be retried without penalizing the builder.
 
 ### Mutable deployment evidence
 

@@ -1,6 +1,6 @@
 <#!
 .SYNOPSIS
-Checks the project-local GenLayer v0.6 release family before profiling or deployment.
+Checks the project-local GenLayer toolchain before profiling or deployment.
 
 .DESCRIPTION
 Run after `.venv` and `node_modules` have been installed. This script does not
