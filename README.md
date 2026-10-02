@@ -6,7 +6,11 @@ Clients fund bounties in GEN, builders submit public proof (GitHub commit + sour
 
 ## Current Status
 - **Contract version:** 2.0.0
+- **Contract address:** `0x5CCe24450B88BFC705794830C717c2D511253bF5`
 - **Network:** GenLayer Studionet (chain 61999)
+- **Production app:** [https://proofpay-gamma.vercel.app](https://proofpay-gamma.vercel.app/)
+- **CI Status:** [![CI](https://github.com/9ytshade/proofpay/actions/workflows/ci.yml/badge.svg)](https://github.com/9ytshade/proofpay/actions/workflows/ci.yml) (Latest run: [37039366221](https://github.com/9ytshade/proofpay/actions/runs/37039366221))
+- **Deployment & Audit Record:** [STUDIONET_V2_RUN_2026-10-01.md](./docs/STUDIONET_V2_RUN_2026-10-01.md)
 - **Toolchain:** GenLayer CLI 0.39.1 · genlayer-py 0.16.3 · genlayer-test 0.29.2
 - **Frontend:** Next.js 16 + React 19 + Tailwind CSS 4 + genlayer-js SDK
 - **Legacy contract:** `0xa1c53F5afFF44136d63dDF02dFDfA0ecEcFF32b7` (historical reference only)
